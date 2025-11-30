@@ -757,66 +757,9 @@ class ComputationEngine:
         # 获取模型实例 - 传递parameters以支持特殊模型的初始化需求
         model = self.get_model(model_name, parameters)
 
-        # 处理DipoleModel特殊情况（没有继承BaseFieldModel）
+        # 对于DipoleModel，直接使用它的compute_field方法
         if model_name == 'dipole':
-            # 对于DipoleModel，我们直接使用它的方法进行计算
-            # 创建一个FieldSolution对象来封装结果
-            field = np.zeros((len(observation_points), 3))
-            potential = np.zeros(len(observation_points))
-            
-            # 创建电偶极子的正负电荷表示
-            k = 8.99e9  # 库仑常数
-            half_distance = model.distance / 2
-            direction_norm = np.array(model.direction) / np.linalg.norm(model.direction)
-            
-            pos_positive = np.array(model.position) + half_distance * direction_norm
-            pos_negative = np.array(model.position) - half_distance * direction_norm
-            
-            # 为所有观察点计算电场和电势
-            for i, point in enumerate(observation_points):
-                # 计算电场（使用模型的方法）
-                field[i] = model.calculate_field(point[0], point[1], point[2])
-                
-                # 计算电势（使用库仑定律）
-                r1 = np.linalg.norm(point - pos_positive)
-                r2 = np.linalg.norm(point - pos_negative)
-                
-                if r1 > 1e-12:
-                    potential[i] += k * model.charge / r1
-                if r2 > 1e-12:
-                    potential[i] += k * (-model.charge) / r2
-            
-            # 确保observation_points是3D格式
-            if observation_points.shape[1] == 2:
-                # 转换2D点到3D（z=0）
-                points_3d = np.column_stack([observation_points, np.zeros(observation_points.shape[0])])
-            else:
-                points_3d = observation_points
-            
-            # 构造正确的电荷列表
-            dipole_charges = [
-                {'position': tuple(pos_positive), 'value': model.charge},
-                {'position': tuple(pos_negative), 'value': -model.charge}
-            ]
-            
-            # 返回符合FieldSolution类型的结果
-            return {
-                'points': points_3d,
-                'vectors': field,
-                'potentials': potential,
-                'charges': dipole_charges,
-                'metadata': {
-                    'model_type': 'dipole',
-                    'status': 'computed',
-                    'dimension': '3D',
-                    'dipole_parameters': {
-                        'charge': model.charge,
-                        'distance': model.distance,
-                        'position': model.position,
-                        'direction': model.direction
-                    }
-                }
-            }
+            return model.compute_field(observation_points)
         else:
             # 标准模型处理流程
             # 设置电荷
