@@ -205,17 +205,16 @@ class DipoleModel(BaseFieldModel):
     
     def _initialize_charges(self):
         """初始化电偶极子的正负电荷"""
-        from core.engine import Charge
         half_distance = self.distance / 2
         direction_norm = np.array(self.direction) / np.linalg.norm(self.direction)
 
         pos_positive = np.array(self.position) + half_distance * direction_norm
         pos_negative = np.array(self.position) - half_distance * direction_norm
         
-        # 添加正负电荷到电荷列表
+        # 添加正负电荷到电荷列表，确保使用正确的'position'和'value'字段格式
         self._charges = [
-            Charge(charge=self.charge, position=tuple(pos_positive)),
-            Charge(charge=-self.charge, position=tuple(pos_negative))
+            {'position': tuple(pos_positive), 'value': self.charge},
+            {'position': tuple(pos_negative), 'value': -self.charge}
         ]
 
     def calculate_field(self, x: float, y: float, z: float) -> Tuple[float, float, float]:
@@ -261,19 +260,35 @@ class DipoleModel(BaseFieldModel):
         
         k = 8.99e9  # 库仑常数
         
+        # 预先处理电荷数据，确保能同时处理对象和字典形式
+        processed_charges = []
+        for charge in self._charges:
+            if isinstance(charge, dict):
+                # 处理字典形式的电荷（使用value字段）
+                processed_charges.append({
+                    'value': charge.get('value', 0.0),
+                    'position': charge.get('position', (0, 0, 0))
+                })
+            else:
+                # 处理对象形式的电荷（使用charge属性）
+                processed_charges.append({
+                    'value': getattr(charge, 'charge', getattr(charge, 'value', 0.0)),
+                    'position': getattr(charge, 'position', (0, 0, 0))
+                })
+        
         for i, point in enumerate(observation_points):
             # 计算电场
             Ex, Ey, Ez = self.calculate_field(point[0], point[1], point[2])
             field[i] = [Ex, Ey, Ez]
             
             # 计算电势
-            for charge in self._charges:
-                dx = point[0] - charge.position[0]
-                dy = point[1] - charge.position[1]
-                dz = point[2] - charge.position[2]
+            for charge in processed_charges:
+                dx = point[0] - charge['position'][0]
+                dy = point[1] - charge['position'][1]
+                dz = point[2] - charge['position'][2]
                 r = np.sqrt(dx**2 + dy**2 + dz**2)
                 if r > 1e-12:
-                    potential[i] += k * charge.charge / r
+                    potential[i] += k * charge['value'] / r
         
         return FieldSolution(
             points=observation_points,

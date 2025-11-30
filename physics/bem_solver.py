@@ -1,26 +1,19 @@
 # physics/bem_solver.py
 """
 边界元法求解器实现
-
 严格遵循李亚莎论文《三维静电场线性插值边界元中的解析积分方法》的理论框架。
-
 核心理论修正：
 1. 边界积分方程：c(r)φ(r) + ∫_Γ φ* (∂G/∂n) dS = ∫_Γ G * (∂φ/∂n) dS
    离散形式：[H]{φ} = [G]{q}，其中 H_ij = ∫_Γ_j (∂G/∂n) dS,  G_ij = ∫_Γ_j G dS
-
 2. 对角线处理：
    H_ii = c(r_i) + ∫_Γ_i (∂G/∂n) dS
    其中 c(r_i) = Ω_i / 4π，Ω_i 是顶点i处的立体角
-
    对于光滑边界，c(r_i) = 0.5
-
 3. 固体角计算：使用精确解析公式
    Ω = 2π - Σ θ_k，其中θ_k是边界边在顶点处的内角
-
 4. 奇异积分：
    - G_ii 使用解析积分（非零）
    - H_ii 主值处理，不包含自相互作用
-
 关键改进：
 - G矩阵对角线不再设为0.5，而是精确计算自积分
 - H矩阵对角线精确包含固体角贡献
@@ -298,7 +291,7 @@ class TriangleLinearBEM(BaseFieldModel):
                 self.potentials[idx] = phi_bc
 
         logger.info(
-            f"✅ 电位分布求解完成: {n_vertices}个顶点, "
+            f"电位分布求解完成: {n_vertices}个顶点, "
             f"电位范围 [{np.min(self.potentials):.3f}, {np.max(self.potentials):.3f}] V"
         )
 
