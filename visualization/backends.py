@@ -315,12 +315,19 @@ class VisualizationBackend(ABC):
         negative = []
 
         for charge in solution['charges']:
-            pos = charge['position']
-            q = charge['value']
-            if q > 0:
-                positive.append((pos, q))
-            else:
-                negative.append((pos, q))
+            try:
+                pos = charge['position']
+                # 安全获取电荷值，防止'value'键错误
+                q = charge.get('value', 0.0) if isinstance(charge.get('value'), (int, float)) else 0.0
+                
+                if q > 0:
+                    positive.append((pos, q))
+                else:
+                    negative.append((pos, q))
+            except Exception as e:
+                logger.warning(f"处理电荷时出错: {e}")
+                # 跳过有问题的电荷，继续处理其他电荷
+                continue
 
         return positive, negative
 
@@ -425,15 +432,33 @@ class MatplotlibBackend(VisualizationBackend):
         ax.yaxis.label.set_color(text_primary)
 
     def plot_potential(self, solution: FieldSolution, config: Optional[VisualizationConfig] = None) -> plt.Figure:
-        """现代化电位表面图"""
+        """现代化电位表面图 - 仅支持3D数据"""
         cfg = config if config else self.config
 
-        points, _, _ = self._preprocess_data(solution)
+        # 直接从solution获取points，不通过_preprocess_data避免潜在的数据处理问题
+        points = solution['points']
         potentials = solution.get('potentials')
 
         if potentials is None:
             potentials = np.zeros(len(points))
             logger.warning("电位数据缺失，使用零值")
+        
+        # 修复形状不匹配问题：确保potentials与points长度匹配
+        if len(points) != len(potentials):
+            logger.error(f"形状不匹配: points长度={len(points)}, potentials长度={len(potentials)}")
+            # 调整potentials长度以匹配points
+            if len(potentials) < len(points):
+                # 如果potentials较短，使用适当的值填充
+                potentials = np.pad(potentials, (0, len(points) - len(potentials)), mode='edge')
+            else:
+                # 如果potentials较长，截断到与points相同长度
+                potentials = potentials[:len(points)]
+        
+        # 强制确保数据是3D格式
+        if points.shape[1] < 3:
+            # 添加z维度并设置为0
+            points = np.hstack([points, np.zeros((len(points), 3 - points.shape[1]))])
+            logger.info("已将数据转换为3D格式用于边界元法可视化")
 
         fig = plt.figure(figsize=(12, 8), facecolor=self.design['background'])
         ax = fig.add_subplot(111, projection='3d')
@@ -445,16 +470,30 @@ class MatplotlibBackend(VisualizationBackend):
         # 创建表面图或散点图
         try:
             from scipy.interpolate import griddata
+            # 只使用x和y坐标进行2D插值，但在3D空间中显示
             xi = np.linspace(points[:, 0].min(), points[:, 0].max(), 50)
             yi = np.linspace(points[:, 1].min(), points[:, 1].max(), 50)
             XI, YI = np.meshgrid(xi, yi)
-            ZI = griddata((points[:, 0], points[:, 1]), potentials, (XI, YI), method='cubic')
+            
+            # 修复griddata调用，确保输入数组形状正确
+            points_xy = points[:, :2].astype(float)
+            potentials_float = potentials.astype(float)
+            
+            # 使用更可靠的插值方法
+            ZI = griddata(points_xy, potentials_float, (XI, YI), method='linear')
+            
+            # 处理可能的NaN值
+            if np.isnan(ZI).all():
+                logger.warning("所有插值点都是NaN，回退到最近邻方法")
+                ZI = griddata(points_xy, potentials_float, (XI, YI), method='nearest')
 
+            # 绘制表面图
             surf = ax.plot_surface(XI, YI, ZI, cmap='viridis', alpha=0.8,
                                    antialiased=True, linewidth=0)
             fig.colorbar(surf, ax=ax, shrink=0.5, aspect=5, label='电位 (V)')
         except Exception as e:
-            # 退化为散点图
+            logger.error(f"表面图绘制失败: {str(e)}")
+            # 退化为3D散点图
             scatter = ax.scatter(points[:, 0], points[:, 1], potentials,
                                  c=potentials, cmap='viridis', s=20, alpha=0.7)
             fig.colorbar(scatter, ax=ax, shrink=0.5, aspect=5, label='电位 (V)')
@@ -466,10 +505,53 @@ class MatplotlibBackend(VisualizationBackend):
 
         return fig
 
-    def plot_field_lines(self, solution: FieldSolution, n_lines: int = 20,
-                         config: Optional[VisualizationConfig] = None, is_3d: bool = False) -> plt.Figure:
-        """现代化电场线可视化"""
+    def plot_field(self, solution: FieldSolution, config: Optional[VisualizationConfig] = None) -> plt.Figure:
+        """主电场可视化接口 - 现代化设计"""
         cfg = config if config else self.config
+        
+        # 数据预处理
+        points, vectors, _ = self._preprocess_data(solution)
+        
+        # 创建图表
+        fig, ax = plt.subplots(figsize=(12, 10), facecolor=self.design['background'])
+        self._apply_modern_style(ax, "电场分布可视化")
+        
+        # 检查是否显示向量场
+        if cfg.get('show_vectors', True):
+            try:
+                # 智能降采样以提高性能
+                n_points = len(points)
+                if n_points > 1000:  # 对于大数据集进行降采样
+                    sample_idx = np.random.choice(n_points, 1000, replace=False)
+                    sample_points = points[sample_idx]
+                    sample_vectors = vectors[sample_idx]
+                else:
+                    sample_points = points
+                    sample_vectors = vectors
+                
+                # 绘制向量场
+                ax.quiver(sample_points[:, 0], sample_points[:, 1], 
+                          sample_vectors[:, 0], sample_vectors[:, 1],
+                          color=self.design['primary'], alpha=0.6, scale=1)
+            except Exception as e:
+                logger.warning(f"向量场绘制失败: {e}")
+        
+        # 设置坐标轴
+        ax.set_xlabel('X (m)', color=self.design['text_primary'])
+        ax.set_ylabel('Y (m)', color=self.design['text_primary'])
+        
+        return fig
+
+    def plot_field_lines(self, solution: FieldSolution, n_lines: int = 20,
+                         config: Optional[VisualizationConfig] = None, is_3d: bool = False) -> Any:
+        """现代化电场线可视化"""
+        # 使用传入的config参数，默认为空字典
+        cfg = config or {}
+
+        points, vectors, _ = self._preprocess_data(solution)
+
+        # 获取电荷信息
+        charges = solution.get('charges', [])
 
         # 检查是否需要显示电场线，同时支持show_field_lines和show_streamlines参数
         show_lines = cfg.get('show_field_lines', True) or cfg.get('show_streamlines', True)
@@ -481,10 +563,10 @@ class MatplotlibBackend(VisualizationBackend):
             ax.set_ylabel('Y (m)', color=self.design['text_primary'])
             return fig
 
-        points, vectors, _ = self._preprocess_data(solution)
-
-        # 计算电场线
-        field_lines = FieldLineCalculator.compute_field_lines(points, vectors, n_lines)
+        # 计算电场线，传入电荷信息
+        field_lines = FieldLineCalculator.compute_field_lines(
+            points, vectors, n_lines, is_3d=is_3d, charges=charges
+        )
 
         if is_3d:
             # 3D模式
@@ -513,13 +595,13 @@ class MatplotlibBackend(VisualizationBackend):
                 for pos, q in pos_charges:
                     ax.scatter(pos[0], pos[1], pos[2] if len(pos) > 2 else 0,
                                color=self.design['charge_positive'],
-                               s=100 + 50 * abs(q) / 1e-9,
+                               s=150,  # 使用固定大小，不依赖电荷值
                                alpha=0.8, edgecolors='white')
 
                 for pos, q in neg_charges:
                     ax.scatter(pos[0], pos[1], pos[2] if len(pos) > 2 else 0,
                                color=self.design['charge_negative'],
-                               s=100 + 50 * abs(q) / 1e-9,
+                               s=150,  # 使用固定大小，不依赖电荷值
                                alpha=0.8, edgecolors='white')
 
             ax.set_xlabel('X (m)', color=self.design['text_primary'])
@@ -544,12 +626,12 @@ class MatplotlibBackend(VisualizationBackend):
                 pos_charges, neg_charges = self._create_charge_collections(solution)
 
                 for pos, q in pos_charges:
-                    circle = Circle(pos[:2], radius=0.05 + 0.02 * abs(q) / 1e-9,
+                    circle = Circle(pos[:2], radius=0.1,  # 使用固定大小，不依赖电荷值
                                     color=self.design['charge_positive'], alpha=0.8, zorder=10)
                     ax.add_patch(circle)
 
                 for pos, q in neg_charges:
-                    circle = Circle(pos[:2], radius=0.05 + 0.02 * abs(q) / 1e-9,
+                    circle = Circle(pos[:2], radius=0.1,  # 使用固定大小，不依赖电荷值
                                     color=self.design['charge_negative'], alpha=0.8, zorder=10)
                     ax.add_patch(circle)
 
@@ -846,9 +928,8 @@ class PlotlyBackend(VisualizationBackend):
                 pos_coords = np.array([p[0] for p in pos_charges])
                 charges = np.array([p[1] for p in pos_charges])
 
-                # 计算电荷大小 - 修复除零错误
-                max_charge = np.max(np.abs(charges)) if len(charges) > 0 else 1.0
-                charge_sizes = 12 + 8 * np.abs(charges) / max_charge
+                # 使用固定大小，不依赖电荷值，确保电荷始终清晰可见
+                charge_sizes = np.full(len(charges), 20.0)
 
                 fig.add_trace(
                     go.Scatter3d(
@@ -875,8 +956,8 @@ class PlotlyBackend(VisualizationBackend):
                 neg_coords = np.array([p[0] for p in neg_charges])
                 charges = np.array([p[1] for p in neg_charges])
 
-                max_charge = np.max(np.abs(charges)) if len(charges) > 0 else 1.0
-                charge_sizes = 12 + 8 * np.abs(charges) / max_charge
+                # 使用固定大小，不依赖电荷值，确保电荷始终清晰可见
+                charge_sizes = np.full(len(charges), 20.0)
 
                 fig.add_trace(
                     go.Scatter3d(
@@ -970,7 +1051,7 @@ class PlotlyBackend(VisualizationBackend):
         # 更新整体布局
         fig.update_layout(
             title=dict(
-                text=f"🌌 宇宙风格电场分析 - {model_name}",
+                text=f"静电场分析 - {model_name}",
                 x=0.5,
                 font=dict(size=24, color=self.design['text_primary'])
             ),
@@ -1092,7 +1173,7 @@ class PlotlyBackend(VisualizationBackend):
 
         fig.update_layout(
             title=dict(
-                text="🌠3D电位分布",
+                text="3D电位分布",
                 x=0.5,
                 font=dict(size=20, color=self.design['text_primary'])
             )
@@ -1116,15 +1197,20 @@ class PlotlyBackend(VisualizationBackend):
         return color
 
     def plot_field_lines(self, solution: FieldSolution, n_lines: int = 20,
-                         config: Optional[VisualizationConfig] = None, is_3d: bool = False) -> go.Figure:
-        """宇宙风格电场线 - 3D渲染优化版"""
-        cfg = config if config else self.config
+                         config: Optional[VisualizationConfig] = None, is_3d: bool = False) -> Any:
+        """现代化电场线可视化"""
+        # 使用传入的config参数
+        cfg = config or {}
+
+        points, vectors, _ = self._preprocess_data(solution)
+
+        # 获取电荷信息
+        charges = solution.get('charges', [])
 
         # 3D模式下增加电场线数量，使可视化更丰富
         if is_3d:
             n_lines = 30
 
-        points, vectors, _ = self._preprocess_data(solution)
         logger.info(f"开始绘制电场线: 3D模式={is_3d}, 数据维度={points.shape[1]}, 线数={n_lines}")
 
         # 确保在3D模式下数据维度正确
@@ -1141,8 +1227,8 @@ class PlotlyBackend(VisualizationBackend):
                 vectors = np.hstack([vectors, z_column])
                 logger.info("已将2D向量数据转换为3D格式")
 
-        # 计算电场线，传递维度信息
-        field_lines = FieldLineCalculator.compute_field_lines(points, vectors, n_lines, is_3d=is_3d)
+        # 计算电场线，传递维度信息和电荷信息
+        field_lines = FieldLineCalculator.compute_field_lines(points, vectors, n_lines, is_3d=is_3d, charges=charges)
 
         # 创建宇宙风格图形 - 使用make_subplots确保支持row/col参数
         fig = make_subplots(rows=1, cols=1, specs=[[{'type': 'scene'}]])
@@ -1226,17 +1312,58 @@ class PlotlyBackend(VisualizationBackend):
 
         # 添加电荷显示（如果有）
         if is_3d and 'charges' in solution and solution['charges']:
-            pos_charges = [c for c in solution['charges'] if c['value'] > 0]
-            neg_charges = [c for c in solution['charges'] if c['value'] <= 0]
+            # 安全筛选正负电荷，增加错误处理
+            pos_charges = []
+            neg_charges = []
+            for c in solution['charges']:
+                try:
+                    # 安全获取电荷值
+                    value = float(c.get('value', 0.0))
+                    if not np.isfinite(value):
+                        value = 0.0
+                    if value > 0:
+                        pos_charges.append(c)
+                    else:
+                        neg_charges.append(c)
+                except (TypeError, ValueError):
+                    # 如果无法获取电荷值，默认为负电荷
+                    neg_charges.append(c)
 
             if pos_charges:
+                # 安全计算电荷大小，避免NaN值
+                charge_sizes = []
+                for c in pos_charges:
+                    try:
+                        # 安全获取电荷值并处理可能的NaN
+                        value = abs(float(c.get('value', 0.0)))
+                        if not np.isfinite(value):
+                            value = 0.0
+                        charge_sizes.append(15 + 10 * value)
+                    except (TypeError, ValueError):
+                        charge_sizes.append(15)  # 默认大小
+                
+                # 安全提取位置信息
+                x_positions = []
+                y_positions = []
+                z_positions = []
+                for c in pos_charges:
+                    try:
+                        pos = c.get('position', [0, 0, 0])
+                        x_positions.append(float(pos[0]) if len(pos) > 0 else 0.0)
+                        y_positions.append(float(pos[1]) if len(pos) > 1 else 0.0)
+                        z_positions.append(float(pos[2]) if len(pos) > 2 else 0.0)
+                    except (TypeError, ValueError, IndexError):
+                        x_positions.append(0.0)
+                        y_positions.append(0.0)
+                        z_positions.append(0.0)
+                
                 fig.add_trace(go.Scatter3d(
-                    x=[c['position'][0] for c in pos_charges],
-                    y=[c['position'][1] for c in pos_charges],
-                    z=[c['position'][2] if len(c['position']) > 2 else 0 for c in pos_charges],
+                    x=x_positions,
+                    y=y_positions,
+                    z=z_positions,
                     mode='markers',
                     marker=dict(
-                        size=[15 + 10 * abs(c['value']) for c in pos_charges],
+                        size=charge_sizes,
                         color=self.design['charge_positive'],
                         symbol='circle',
                         line=dict(color='white', width=2),
@@ -1246,13 +1373,40 @@ class PlotlyBackend(VisualizationBackend):
                 ), row=1, col=1)
 
             if neg_charges:
+                # 安全计算电荷大小，避免NaN值
+                charge_sizes = []
+                for c in neg_charges:
+                    try:
+                        # 安全获取电荷值并处理可能的NaN
+                        value = abs(float(c.get('value', 0.0)))
+                        if not np.isfinite(value):
+                            value = 0.0
+                        charge_sizes.append(15 + 10 * value)
+                    except (TypeError, ValueError):
+                        charge_sizes.append(15)  # 默认大小
+                
+                # 安全提取位置信息
+                x_positions = []
+                y_positions = []
+                z_positions = []
+                for c in neg_charges:
+                    try:
+                        pos = c.get('position', [0, 0, 0])
+                        x_positions.append(float(pos[0]) if len(pos) > 0 else 0.0)
+                        y_positions.append(float(pos[1]) if len(pos) > 1 else 0.0)
+                        z_positions.append(float(pos[2]) if len(pos) > 2 else 0.0)
+                    except (TypeError, ValueError, IndexError):
+                        x_positions.append(0.0)
+                        y_positions.append(0.0)
+                        z_positions.append(0.0)
+                
                 fig.add_trace(go.Scatter3d(
-                    x=[c['position'][0] for c in neg_charges],
-                    y=[c['position'][1] for c in neg_charges],
-                    z=[c['position'][2] if len(c['position']) > 2 else 0 for c in neg_charges],
+                    x=x_positions,
+                    y=y_positions,
+                    z=z_positions,
                     mode='markers',
                     marker=dict(
-                        size=[15 + 10 * abs(c['value']) for c in neg_charges],
+                        size=charge_sizes,
                         color=self.design['charge_negative'],
                         symbol='circle',
                         line=dict(color='white', width=2),
@@ -1282,7 +1436,7 @@ class PlotlyBackend(VisualizationBackend):
 
         fig.update_layout(
             title=dict(
-                text=f"✨ 电场线可视化 ({n_lines} 条流线) {'3D' if is_3d else '2D'}",
+                text=f"电场线可视化 ({n_lines} 条流线) {'3D' if is_3d else '2D'}",
                 x=0.5,
                 font=dict(size=20, color=self.design['text_primary'])
             ),
@@ -1454,9 +1608,17 @@ class FieldLineCalculator:
             observation_points: NDArray[np.float64],
             field_vectors: NDArray[np.float64],
             n_lines: int = 20,
-            is_3d: bool = False
+            is_3d: bool = False,
+            charges: List[dict] = None  # 新增电荷参数
     ) -> List[NDArray]:
-        """计算电场线 - 现代化算法"""
+        """计算电场线 - 支持电荷模型优化"""
+        # 确保输入是numpy数组
+        observation_points = np.asarray(observation_points, dtype=np.float64)
+        field_vectors = np.asarray(field_vectors, dtype=np.float64)
+        
+        # 初始化电场线列表
+        field_lines = []
+        
         # 确保3D模式下正确处理维度
         if is_3d:
             # 验证数据维度
@@ -1474,14 +1636,29 @@ class FieldLineCalculator:
                 observation_points[:, 2] += 0.05 * np.random.randn(observation_points.shape[0])
                 field_vectors[:, 2] += 0.1 * np.random.randn(field_vectors.shape[0])
 
-        # 智能起点选择 - 3D模式生成更多起点以增加立体效果
-        target_lines = n_lines * 2 if is_3d else n_lines  # 3D模式下生成更多起点
-        start_points = FieldLineCalculator._select_start_points(observation_points, field_vectors, target_lines)
-
-        field_lines = []
-        # 根据电场线数量动态调整最大步数，避免计算量过大
-        base_max_steps = max(50, min(200, 300 - target_lines * 2))
-        max_steps = int(base_max_steps * 1.4) if is_3d else base_max_steps  # 3D模式增加步数
+        # 根据电荷类型调整场线数量
+        charges = charges or []
+        is_single_charge = len(charges) == 1
+        is_dipole = len(charges) == 2
+        
+        if is_single_charge or is_dipole:
+            # 对于点电荷和电偶极子，增加场线数量以获得更好的效果
+            target_lines = n_lines * 3
+        else:
+            target_lines = n_lines * 2 if is_3d else n_lines
+        start_points = FieldLineCalculator._select_start_points(
+            observation_points, field_vectors, target_lines, charges
+        )
+        
+        # 根据电荷类型调整最大步数
+        if is_single_charge:
+            max_steps = 300  # 点电荷需要更多步数以显示辐射特性
+        elif is_dipole:
+            max_steps = 250  # 电偶极子需要更多步数以形成闭合环
+        else:
+            # 其他情况，根据电场线数量动态调整最大步数
+            base_max_steps = max(50, min(200, 300 - target_lines * 2))
+            max_steps = int(base_max_steps * 1.4) if is_3d else base_max_steps  # 3D模式增加步数
 
         for start in start_points:
             # 3D模式下，为起点添加z轴方向的微小扰动
@@ -1490,7 +1667,8 @@ class FieldLineCalculator:
                 start[2] += 0.03 * np.random.randn()  # 添加随机z扰动
 
             line = FieldLineCalculator._trace_field_line(
-                start, observation_points, field_vectors, max_steps=max_steps
+                start, observation_points, field_vectors, max_steps=max_steps,
+                charges=charges, min_field=1e-5  # 添加charges和更低的最小场强阈值
             )
 
             # 3D模式下更严格的筛选条件
@@ -1511,11 +1689,173 @@ class FieldLineCalculator:
         return field_lines
 
     @staticmethod
-    def _select_start_points(points: NDArray, vectors: NDArray, n_points: int) -> List[NDArray]:
-        """智能起点选择算法"""
-        field_strength = np.linalg.norm(vectors, axis=1)
+    def _select_start_points(points: NDArray, vectors: NDArray, n_points: int,
+                             charges: List[dict] = None) -> List[NDArray]:
+        """智能起点选择算法 - 根据电荷模型优化"""
 
-        # 选择高场强区域
+        # 如果有电荷信息，优先基于电荷物理特性选择起点
+        if charges and len(charges) > 0:
+            start_points = []
+
+            # 分析电荷模型类型
+            charge_positions = []
+            charge_values = []
+            
+            # 处理不同形式的电荷数据
+            for c in charges:
+                if isinstance(c, dict):
+                    charge_positions.append(c.get('position', (0, 0, 0)))
+                    charge_values.append(c.get('value', 0.0))
+                else:
+                    # 处理Charge对象
+                    charge_positions.append(getattr(c, 'position', (0, 0, 0)))
+                    # 尝试获取value属性，失败则尝试charge属性
+                    charge_value = getattr(c, 'value', None)
+                    if charge_value is None:
+                        charge_value = getattr(c, 'charge', 0.0)
+                    charge_values.append(charge_value)
+
+            # 判断是点电荷还是电偶极子
+            if len(charges) == 1:
+                # 单点电荷 - 从电荷位置向外辐射状发射
+                # 将位置从元组转换为numpy数组
+                charge_pos = np.array(charge_positions[0])
+                is_3d = len(charge_pos) > 2
+                
+                # 优化的球面分布算法
+                start_points = []
+                n_theta = int(np.sqrt(n_points))
+                n_phi = n_points // n_theta + (1 if n_points % n_theta > 0 else 0)
+                
+                theta = np.linspace(0, np.pi, n_theta, endpoint=False)
+                phi = np.linspace(0, 2 * np.pi, n_phi, endpoint=False)
+                
+                for t in theta:
+                    for p in phi:
+                        if len(start_points) >= n_points:
+                            break
+                        r = 0.1  # 起始半径
+                        # 计算球面上的点
+                        x = charge_pos[0] + r * np.sin(t) * np.cos(p)
+                        y = charge_pos[1] + r * np.sin(t) * np.sin(p)
+                        # 处理3D/2D情况
+                        if is_3d:
+                            z = charge_pos[2] + r * np.cos(t)
+                            start_points.append([x, y, z])
+                        else:
+                            start_points.append([x, y])
+                
+                # 如果点数不够，添加随机点补充
+                while len(start_points) < n_points:
+                    r = 0.1
+                    t = np.random.uniform(0, np.pi)
+                    p = np.random.uniform(0, 2 * np.pi)
+                    x = charge_pos[0] + r * np.sin(t) * np.cos(p)
+                    y = charge_pos[1] + r * np.sin(t) * np.sin(p)
+                    if is_3d:
+                        z = charge_pos[2] + r * np.cos(t)
+                        start_points.append([x, y, z])
+                    else:
+                        start_points.append([x, y])
+                
+                # 确保返回的每个点都是numpy数组
+                return [np.array(point, dtype=np.float64) for point in start_points]
+
+            elif len(charges) == 2 and abs(sum(charge_values)) < 1e-10:
+                # 电偶极子 - 从正电荷出发，向负电荷方向集中
+                pos_charge = None
+                neg_charge = None
+
+                for i, charge in enumerate(charges):
+                    if charge_values[i] > 0:
+                        pos_charge = i
+                    else:
+                        neg_charge = i
+
+                if pos_charge is not None and neg_charge is not None:
+                    # 将位置从元组转换为numpy数组
+                    pos_pos = np.array(charge_positions[pos_charge])
+                    neg_pos = np.array(charge_positions[neg_charge])
+                    is_3d = len(pos_pos) > 2
+
+                    # 改进的电偶极子起点生成算法
+                    start_points = []
+                    
+                    # 计算偶极子方向
+                    dipole_dir = neg_pos - pos_pos
+                    norm = np.linalg.norm(dipole_dir)
+                    if norm > 1e-10:
+                        dipole_dir = dipole_dir / norm
+                    else:
+                        dipole_dir = np.array([1, 0, 0]) if is_3d else np.array([1, 0])
+                    
+                    # 生成垂直于偶极子方向的单位向量
+                    if is_3d:
+                        # 找到一个垂直于dipole_dir的向量
+                        if abs(dipole_dir[0]) < 0.9:  # 如果dipole_dir不是太接近x轴
+                            perp1 = np.array([0, -dipole_dir[2], dipole_dir[1]])
+                        else:
+                            perp1 = np.array([-dipole_dir[2], 0, dipole_dir[0]])
+                        perp1 = perp1 / np.linalg.norm(perp1)
+                        perp2 = np.cross(dipole_dir, perp1)
+                    else:
+                        # 2D情况
+                        perp1 = np.array([-dipole_dir[1], dipole_dir[0]])
+                    
+                    # 分两部分生成起点：从正电荷和从负电荷
+                    # 1. 从正电荷出发
+                    for i in range(n_points // 2):
+                        # 在正电荷周围半球面分布，主要朝向负电荷方向
+                        # 添加更多随机性以创建更自然的电场线分布
+                        spread = 0.4  # 角度分散度
+                        r = 0.1 + 0.05 * np.random.random()  # 略微变化的半径
+                        
+                        # 生成球坐标角度，偏向偶极子方向
+                        theta = np.random.uniform(0, spread)
+                        phi = np.random.uniform(0, 2 * np.pi)
+                        
+                        # 转换为笛卡尔坐标系
+                        if is_3d:
+                            # 使用球坐标系生成偏离偶极子方向的向量
+                            dir_vec = (np.cos(theta) * dipole_dir +
+                                      np.sin(theta) * np.cos(phi) * perp1 +
+                                      np.sin(theta) * np.sin(phi) * perp2)
+                        else:
+                            # 2D情况
+                            dir_vec = (np.cos(theta) * dipole_dir +
+                                      np.sin(theta) * perp1)
+                        
+                        # 确保方向向量归一化
+                        dir_vec = dir_vec / np.linalg.norm(dir_vec)
+                        
+                        # 生成起点
+                        start_point = pos_pos + r * dir_vec
+                        start_points.append(start_point.tolist())
+                    
+                    # 2. 从负电荷出发（可选，但有助于形成闭合环）
+                    for i in range(n_points - len(start_points)):
+                        r = 0.1 + 0.05 * np.random.random()
+                        # 从负电荷出发，远离正电荷方向
+                        theta = np.random.uniform(0, np.pi/2)
+                        phi = np.random.uniform(0, 2 * np.pi)
+                        
+                        if is_3d:
+                            dir_vec = (-np.cos(theta) * dipole_dir +
+                                      np.sin(theta) * np.cos(phi) * perp1 +
+                                      np.sin(theta) * np.sin(phi) * perp2)
+                        else:
+                            dir_vec = (-np.cos(theta) * dipole_dir +
+                                      np.sin(theta) * perp1)
+                        
+                        dir_vec = dir_vec / np.linalg.norm(dir_vec)
+                        start_point = neg_pos + r * dir_vec
+                        start_points.append(start_point.tolist())
+                    
+                    # 确保返回的每个点都是numpy数组
+                    return [np.array(point, dtype=np.float64) for point in start_points]
+
+        # 如果没有电荷信息或不是特殊模型，使用原来的场强选择方法
+        field_strength = np.linalg.norm(vectors, axis=1)
         strength_threshold = np.percentile(field_strength, 80)
         high_strength_indices = np.where(field_strength > strength_threshold)[0]
 
@@ -1530,7 +1870,6 @@ class FieldLineCalculator:
             kmeans.fit(points[high_strength_indices])
             return [center for center in kmeans.cluster_centers_]
         except ImportError:
-            # 回退算法
             selected_indices = np.random.choice(high_strength_indices, n_points, replace=False)
             return [points[i] for i in selected_indices]
 
@@ -1540,22 +1879,65 @@ class FieldLineCalculator:
             grid_points: NDArray,
             field_vectors: NDArray,
             max_steps: int = 150,
-            min_field: float = 1e-4
+            min_field: float = 1e-4,
+            charges: List = None  # 添加charges参数以支持特殊电场优化
     ) -> List[NDArray]:
-        """自适应电场线追踪（优化版）"""
+        """自适应电场线追踪（优化版）- 增强点电荷和电偶极子支持"""
+        # 确保start是numpy数组
+        start = np.asarray(start, dtype=np.float64)
         line = [start]
         current = start.copy()
 
         # 检查是否为3D空间
         is_3d = len(start) == 3
+        
+        # 分析电荷模型类型（用于特殊优化）
+        charges = charges or []
+        is_single_charge = len(charges) == 1
+        is_dipole = len(charges) == 2
+        charge_positions = []
+        charge_values = []
+        
+        # 处理不同形式的电荷数据
+        for c in charges:
+            if isinstance(c, dict):
+                if 'position' in c:
+                    charge_positions.append(np.array(c['position']))
+                    charge_values.append(c.get('value', 0.0))
+            else:
+                pos = getattr(c, 'position', None)
+                if pos is not None:
+                    charge_positions.append(np.array(pos))
+                    # 尝试获取value属性，失败则尝试charge属性
+                    charge_value = getattr(c, 'value', None)
+                    if charge_value is None:
+                        charge_value = getattr(c, 'charge', 0.0)
+                    charge_values.append(charge_value)
 
-        # 自适应步长参数（针对3D空间调整）
-        base_step = 0.12 if is_3d else 0.08  # 3D空间使用更大的基础步长
-        min_step = 0.008
-        max_step = 0.35 if is_3d else 0.25  # 3D空间允许更大的步长范围
-
-        # 根据空间维度调整最大步数
-        current_max_steps = max_steps if not is_3d else int(max_steps * 1.4)  # 3D空间大幅增加步数
+        # 针对不同电荷类型的特殊参数设置
+        if is_single_charge:
+            # 点电荷电场线优化
+            base_step = 0.15  # 更大的基础步长
+            min_step = 0.005
+            max_step = 0.4
+            current_max_steps = int(max_steps * 1.5)
+            use_log_step = True
+            min_field = 1e-5  # 降低最小场强阈值以延长电场线
+        elif is_dipole:
+            # 电偶极子电场线优化
+            base_step = 0.12
+            min_step = 0.008
+            max_step = 0.35
+            current_max_steps = int(max_steps * 1.3)
+            use_log_step = True
+            min_field = 5e-5
+        else:
+            # 一般情况
+            base_step = 0.12 if is_3d else 0.08  # 3D空间使用更大的基础步长
+            min_step = 0.008
+            max_step = 0.35 if is_3d else 0.25  # 3D空间允许更大的步长范围
+            current_max_steps = max_steps if not is_3d else int(max_steps * 1.4)
+            use_log_step = False
 
         # 预先计算网格点的KDTree以加速最近邻搜索
         try:
@@ -1567,43 +1949,107 @@ class FieldLineCalculator:
 
         # 3D模式特殊参数
         if is_3d:
-            # 为3D空间添加空间随机性，使电场线更加立体
-            spatial_variation = 0.05
-            # 增加3D空间的最大追踪距离
+            spatial_variation = 0.03  # 减少随机性以保持电场线质量
             max_distance_from_start = 15
         else:
             spatial_variation = 0.0
             max_distance_from_start = 8
+        
+        # 对于点电荷，增加最大距离限制
+        if is_single_charge and charge_positions:
+            dist_to_charge = np.linalg.norm(current - charge_positions[0])
+            max_distance_from_start = max(max_distance_from_start, dist_to_charge * 20)
 
+        prev_dir = None
+        curvature_count = 0  # 记录曲率突变次数
+        
         for step in range(current_max_steps):
             # 当前场强和方向
-            E = FieldLineCalculator._interpolate_field(current, grid_points, field_vectors, use_kdtree=use_kdtree)
+            current_array = np.asarray(current, dtype=np.float64)
+            E = FieldLineCalculator._interpolate_field(current_array, grid_points, field_vectors, use_kdtree=use_kdtree)
             E_mag = np.linalg.norm(E)
 
             if E_mag < min_field:
                 break
 
             direction = E / E_mag
+            
+            # 检测电场方向突变
+            if prev_dir is not None:
+                cos_angle = np.dot(direction, prev_dir)
+                if cos_angle < -0.8:  # 方向突变超过150度
+                    curvature_count += 1
+                    if curvature_count > 3:  # 限制曲率突变次数
+                        break
+            
+            # 对于点电荷，确保电场线正确向外辐射
+            if is_single_charge and charge_positions:
+                charge_dir = current - charge_positions[0]
+                charge_dir_norm = np.linalg.norm(charge_dir)
+                if charge_dir_norm > 1e-10:
+                    charge_dir = charge_dir / charge_dir_norm
+                    # 确保场线方向与径向方向夹角不超过45度
+                    cos_angle = np.dot(direction, charge_dir)
+                    if cos_angle < np.cos(np.pi/4):  # 45度
+                        # 修正方向，使其更符合点电荷的径向特性
+                        direction = 0.7 * direction + 0.3 * charge_dir
+                        direction = direction / np.linalg.norm(direction)
+            
+            # 对于电偶极子，优化场线方向
+            elif is_dipole and charge_positions:
+                # 计算偶极子轴线方向
+                dipole_axis = charge_positions[1] - charge_positions[0]
+                axis_norm = np.linalg.norm(dipole_axis)
+                if axis_norm > 1e-10:
+                    dipole_axis = dipole_axis / axis_norm
+                    
+                    # 对于电偶极子，适当引导场线方向
+                    # 避免场线过早终止
+                    if step > 20 and E_mag < 1e-3:
+                        # 当接近弱场区时，引导场线朝向相反电荷
+                        # 安全检查：确保charge_positions和charge_values都有足够的元素
+                        if charge_positions and len(charge_positions) >= 2 and charge_values and len(charge_values) >= 2:
+                            try:
+                                # 判断应该朝向哪个电荷
+                                current_charge_idx = 0 if np.linalg.norm(current - charge_positions[0]) < np.linalg.norm(current - charge_positions[1]) else 1
+                                target_charge_idx = 1 - current_charge_idx
+                                target_dir = charge_positions[target_charge_idx] - current
+                                target_dir_norm = np.linalg.norm(target_dir)
+                                if target_dir_norm > 1e-10:
+                                    target_dir = target_dir / target_dir_norm
+                                    # 适度混合方向
+                                    direction = 0.8 * direction + 0.2 * target_dir
+                                    direction = direction / np.linalg.norm(direction)
+                            except Exception:
+                                # 如果出现任何错误，静默处理，继续使用原方向
+                                pass
+            
+            prev_dir = direction.copy()
 
             # 自适应步长：场强越大，步长越小
-            # 3D空间使用优化的调整公式
-            if is_3d:
+            if use_log_step:
+                # 对数步长调整更适合点电荷和偶极子
+                adaptive_step = np.clip(base_step / (1 + 0.5 * np.log10(E_mag + 1)), min_step, max_step)
+                
+                # 随着远离起点，步长适度增大
+                dist_from_start = np.linalg.norm(current - start)
+                if dist_from_start > 0.5:
+                    adaptive_step *= 1.0 + 0.1 * np.log1p(dist_from_start)
+            elif is_3d:
                 # 3D空间使用更激进的自适应步长策略
                 adaptive_step = np.clip(base_step / (1 + 0.3 * np.log10(E_mag + 1)), min_step, max_step)
 
-                # 在3D模式下，根据当前位置添加空间随机性，使电场线更加立体
-                if step % 3 == 0:  # 每3步添加一次空间变化
-                    # 添加基于位置的空间扰动，使电场线在3D空间中分布更加自然
-                    spatial_perturbation = spatial_variation * np.sin(np.linspace(0, 2 * np.pi, 3))
+                # 在3D模式下，添加空间随机性
+                if step % 4 == 0:  # 减少添加随机性的频率
+                    spatial_perturbation = spatial_variation * np.random.uniform(-1, 1, 3)
                     direction = direction + spatial_perturbation
-                    direction = direction / np.linalg.norm(direction)  # 重新归一化
+                    direction = direction / np.linalg.norm(direction)
             else:
                 adaptive_step = np.clip(base_step / (1 + np.log10(E_mag + 1)), min_step, max_step)
 
-            # 使用改进的Euler方法，3D模式下更加稳定
-            if is_3d and step % 2 == 0:  # 3D模式下交替使用不同的步长策略
-                # 使用略微不同的步长以增加空间变化
-                adaptive_step *= 1.1
+            # 3D模式稳定性优化
+            if is_3d and step % 3 == 0:
+                adaptive_step *= 1.05  # 更小的步长变化
 
             next_point = current + direction * adaptive_step
 
@@ -1614,18 +2060,60 @@ class FieldLineCalculator:
             # 检查是否接近电荷或场强过大的区域
             if E_mag > 1e6:
                 break
+            
+            # 对于点电荷，避免场线过于接近电荷（可能导致数值不稳定）
+            if is_single_charge and charge_positions:
+                dist_to_charge = np.linalg.norm(next_point - charge_positions[0])
+                if dist_to_charge < 0.01:  # 防止场线进入电荷内部
+                    break
 
             # 检查是否形成闭环或陷入循环
             if step > 10:
-                # 计算与前几个点的距离，检测循环
-                recent_points = np.array(line[-5:])
-                distances = np.linalg.norm(recent_points - next_point, axis=1)
-                loop_threshold = 0.03 if is_3d else 0.05  # 3D空间使用更小的阈值
-                if np.any(distances < loop_threshold):
-                    break
+                # 更高效的循环检测
+                if len(line) > 15:
+                    # 只检查每隔几个点
+                    check_interval = max(1, len(line) // 8)
+                    for i in range(0, len(line) - 5, check_interval):
+                        # 确保line[i]是numpy数组
+                        if np.linalg.norm(np.array(line[i]) - next_point) < 0.06:  # 增大阈值避免误判
+                            break
+                else:
+                    recent_points = np.array([np.array(p) for p in line[-5:]])
+                    distances = np.linalg.norm(recent_points - next_point, axis=1)
+                    loop_threshold = 0.04 if is_3d else 0.06  # 增大阈值
+                    if np.any(distances < loop_threshold):
+                        break
 
             line.append(next_point)
             current = next_point
+        
+        # 对于点电荷，确保电场线足够长以显示辐射特性
+        if is_single_charge and len(line) < 50 and len(line) > 10:
+            # 如果线太短，适度延长
+            last_point = np.array(line[-1])
+            if charge_positions:
+                charge_dir = last_point - np.array(charge_positions[0])
+                charge_dir_norm = np.linalg.norm(charge_dir)
+                if charge_dir_norm > 1e-10:
+                    charge_dir = charge_dir / charge_dir_norm
+                    # 添加额外的点以延长电场线
+                    for i in range(10):
+                        extended_point = last_point + 0.1 * charge_dir * (i + 1)
+                        line.append(extended_point)
+        
+        # 对于电偶极子，确保场线有合理的长度
+        elif is_dipole and len(line) < 30 and len(line) > 5:
+            # 如果电偶极子场线太短，尝试延长
+            last_point = np.array(line[-1])
+            # 向远离起点的方向延长
+            reference_point = np.array(line[max(0, len(line)-5)])
+            end_dir = last_point - reference_point
+            end_dir_norm = np.linalg.norm(end_dir)
+            if end_dir_norm > 1e-10:
+                end_dir = end_dir / end_dir_norm
+                for i in range(5):
+                    extended_point = last_point + 0.15 * end_dir * (i + 1)
+                    line.append(extended_point)
 
         return line
 
@@ -1633,6 +2121,12 @@ class FieldLineCalculator:
     def _interpolate_field(query_point: NDArray, grid_points: NDArray, field_vectors: NDArray,
                            use_kdtree: bool = False) -> NDArray:
         """优化的场插值算法"""
+        # 确保query_point是numpy数组
+        query_point = np.asarray(query_point, dtype=np.float64)
+        # 确保grid_points和field_vectors是numpy数组
+        grid_points = np.asarray(grid_points, dtype=np.float64)
+        field_vectors = np.asarray(field_vectors, dtype=np.float64)
+        
         if use_kdtree:
             try:
                 from scipy.spatial import cKDTree
