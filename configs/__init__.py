@@ -1,7 +1,6 @@
 # configs/__init__.py
 """
-宇宙配置加载系统
-
+静电场配置加载系统
 提供类型安全的配置访问，支持环境变量覆盖和用户自定义配置
 """
 
@@ -514,7 +513,7 @@ def _ensure_default_configs() -> None:
                 logger.error(f"创建配置失败: {e}")
 
 
-_DEFAULT_PHYSICS_CONFIG = """# 物理宇宙常数配置
+_DEFAULT_PHYSICS_CONFIG = """# 物理常数配置
 
 constants:
   coulomb_constant: 8.99e9        # 库仑力常数 (N·m²/C²)
@@ -544,7 +543,7 @@ integration:
 _DEFAULT_UI_CONFIG = """# 星云界面配置
 
 app:
-  title: "宇宙静电场仿真"
+  title: "静电场仿真"
   layout: "wide"
   initial_sidebar_state: "expanded"
 
@@ -743,7 +742,7 @@ def run_all_tests() -> None:
 def display_config_sources() -> None:
     """显示所有配置源信息"""
     print("=" * 60)
-    print("宇宙场配置系统")
+    print("静电场模拟")
     print("=" * 60)
 
     sources = list_config_sources()

@@ -2,7 +2,7 @@
 # 星云界面配置
 
 app:
-  title: "宇宙静电场仿真"
+  title: "静电场模拟"
   layout: "wide"
   initial_sidebar_state: "expanded"
 
