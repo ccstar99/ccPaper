@@ -18,7 +18,6 @@
 - **核心计算**：Python 3.8+, NumPy, SciPy
 - **可视化**：Matplotlib, Plotly
 - **Web框架**：Streamlit
-- **其他库**：Type Hints, Protocol类（Python 3.8+新特性）
 
 ## 安装与运行
 
@@ -257,20 +256,14 @@ performance_comparison()
 - **工程设计**：电场仿真和优化
 - **学习研究**：理解静电场的基本概念和规律
 
-## 许可证
-
-本项目采用 MIT 许可证，欢迎自由使用、修改和分发。
-
 ## 联系方式
 
 如有问题或建议，欢迎通过以下方式联系：
-
-- 项目地址：[GitHub Repository]
-- 邮箱：[your-email@example.com]
+- 邮箱：[2409185982qq.com]
 
 ## 更新日志
 
-### v1.0.0 (2024-01-01)
+### v1.0.0 (2025-12-6)
 
 - 初始版本发布
 - 支持点电荷、线电荷、圆环电荷
