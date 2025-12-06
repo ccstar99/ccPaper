@@ -183,7 +183,7 @@ class ElectroFieldApp:
             
             # 计算按钮
             st.markdown("---")
-            calculate_btn = st.button("开始计算", type="primary", use_container_width=True)
+            calculate_btn = st.button("开始计算", type="primary", width='stretch')
             
             return {
                 'model_type': model_type,
@@ -281,7 +281,6 @@ class ElectroFieldApp:
             background: linear-gradient(45deg, #8B5CF6, #6366F1, #EC4899, #F97316, #F59E0B, #10B981, #3B82F6);
             background-size: 400% 400%;
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            text-align: center;
             animation: gradient-animation 20s ease infinite;
         }
         .subtitle {
@@ -291,8 +290,28 @@ class ElectroFieldApp:
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             animation: gradient-animation 20s ease infinite;
         }
+        .title-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        .github-link {
+            color: #8B5CF6;
+            text-decoration: none;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
         </style>
-        <div class="main-title"><em>RUNNING CC</em> <span class="subtitle">静电场仿真</span></div>
+        <div class="title-container">
+            <div><em class="main-title">RUNNING CC</em> <span class="subtitle">静电场仿真</span></div>
+            <a href="https://github.com/ccstar99/ccPaper" target="_blank" class="github-link">
+                cc's GitHub
+            </a>
+        </div>
         """, unsafe_allow_html=True)
         
         if not params['calculate_requested']:
@@ -467,7 +486,7 @@ class ElectroFieldApp:
             ax.set_xlabel('X (m)')
             ax.set_ylabel('Y (m)')
             ax.set_title('2D 电场线分布')
-            st.pyplot(fig, use_container_width=True)
+            st.pyplot(fig, width='stretch')
         
         with tab2:
             st.subheader("电场线3D ")
@@ -550,7 +569,7 @@ class ElectroFieldApp:
                 ),
                 title='3D 电场线分布'
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         
         with tab3:
             st.subheader("电荷分布")
