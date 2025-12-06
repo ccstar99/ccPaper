@@ -440,14 +440,28 @@ class ElectroFieldApp:
                             
                         direction = direction / direction_norm
                         
-                        # 创建小箭头
+                        # 创建小箭头 - 使用浅色三原色
+                        # 定义浅色三原色
+                        light_red = '#ffcccc'    # 浅红色
+                        light_blue = '#cce5ff'   # 浅蓝色
+                        light_yellow = '#ffffcc' # 浅黄色
+                        
+                        # 根据场线方向选择颜色
+                        angle = np.arctan2(direction[1], direction[0])
+                        if -np.pi/3 < angle <= np.pi/3:
+                            arrow_color = light_red    # 右向箭头使用浅红
+                        elif np.pi/3 < angle <= np.pi:  # 上向箭头使用浅黄
+                            arrow_color = light_yellow
+                        else:
+                            arrow_color = light_blue   # 左/下向箭头使用浅蓝
+                        
                         arrow = mpatches.FancyArrowPatch(
                             pos - direction * 0.08,  # 箭头起点稍后退
                             pos + direction * 0.02,  # 箭头终点稍前进
                             arrowstyle='->',  # 标准指向型箭头
                             mutation_scale=8,  # 箭头尺寸
                             mutation_aspect=1.5,  # 保持箭头比例
-                            color='black',
+                            color=arrow_color,
                             linewidth=0.5,  # 箭头线宽
                             zorder=3,
                             alpha=0.9  # 稍微透明
