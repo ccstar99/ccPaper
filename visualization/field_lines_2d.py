@@ -188,8 +188,24 @@ class AppleStyleFieldLines2D:
                         
                     direction = direction / direction_norm
                     
-                    # 计算箭头颜色（使用当前位置的颜色）
-                    arrow_color = colors[idx] if idx < len(colors) else colors[-1]
+                    # 根据电场方向和电荷类型选择浅色三原色调色板
+                    # 为了简单实现，我们使用基于场强方向的浅色三原色
+                    # 可以根据需要扩展为根据电荷来源计算颜色
+                    
+                    # 定义浅色三原色
+                    light_red = '#ffcccc'    # 浅红色
+                    light_blue = '#cce5ff'   # 浅蓝色
+                    light_yellow = '#ffffcc' # 浅黄色
+                    
+                    # 根据场线方向选择颜色
+                    # 使用方向角来决定颜色
+                    angle = np.arctan2(direction[1], direction[0])
+                    if -np.pi/3 < angle <= np.pi/3:
+                        arrow_color = light_red    # 右向箭头使用浅红
+                    elif np.pi/3 < angle <= np.pi:  # 上向箭头使用浅黄
+                        arrow_color = light_yellow
+                    else:
+                        arrow_color = light_blue   # 左/下向箭头使用浅蓝
                     
                     # 创建标准指向型小箭头
                     arrow = mpatches.FancyArrowPatch(
