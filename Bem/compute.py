@@ -53,7 +53,7 @@ class SphericalBEMSolver:
         area_mean = np.mean(areas)
         area_std = np.std(areas)
         
-        # 相对标准差小于2%认为对称（考虑数值误差）
+        # 相对标准差小于0.1%认为对称（考虑数值误差）
         is_sym = (area_std / area_mean) < 0.001
         return is_sym
 
@@ -1188,4 +1188,5 @@ if __name__ == "__main__":
     if results['max_E_error'] < 2.0:
         print("\n计算成功，精度满足要求")
     else:
+
         print("\n计算存在一定误差，建议检查实现")
