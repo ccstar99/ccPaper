@@ -896,11 +896,11 @@ class SphericalBEMSolver:
         print(f"我们最大相对误差: {np.max(E_errors):.3f}%")
         
         if np.max(E_errors) < 1.0:
-            print("✓ 实现成功，精度达到论文水平")
+            print("实现成功，精度达到论文水平")
         elif np.max(E_errors) < 2.0:
-            print("✓ 实现基本正确，精度接近论文水平")
+            print("实现基本正确，精度接近论文水平")
         else:
-            print("⚠ 实现存在一定误差，需要进一步优化")
+            print("实现存在一定误差，需要进一步优化")
         
         results = {
             'sigma_mean': np.mean(sigma_elements),
@@ -1190,3 +1190,4 @@ if __name__ == "__main__":
     else:
 
         print("\n计算存在一定误差，建议检查实现")
+
