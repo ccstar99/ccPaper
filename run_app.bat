@@ -95,7 +95,7 @@ call :delay 800
 echo.
 call :delay 400
 
-echo         代码运行平台 - 快速编译执行解决方案
+echo         代码运行平台 - 快速编译执行可视化
 call :delay 600
 
 echo %COLOR_RESET%
@@ -108,4 +108,5 @@ for /l %%i in (1,1,%times%) do (
     >nul ping -n 1 127.0.0.1
 )
 endlocal
+
 exit /b 0
