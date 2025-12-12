@@ -1,7 +1,7 @@
 # physics/ring.py
 import numpy as np
 from typing import Union, List
-from utils.constants import COULOMB_CONSTANT, VACUUM_PERMITTIVITY
+from utils.constants import COULOMB_CONSTANT
 
 class RingCharge:
     """
@@ -239,71 +239,3 @@ class RingCharge:
         # 判断是否在管体内：距离小于半径的小比例（固定管体厚度）
         tube_thickness = self.R * tol
         return distance_to_ring < tube_thickness
-    
-    def get_ring_visualization_points(self, num_theta: int = 100) -> np.ndarray:
-        """
-        生成用于可视化圆环的三维坐标点集
-        
-        Args:
-            num_theta: 角向采样点数
-            
-        Returns:
-            三维坐标数组 [num_theta, 3]
-        """
-        theta = np.linspace(0, 2*np.pi, num_theta)
-        x = self.position[0] + self.R * np.cos(theta)
-        y = self.position[1] + self.R * np.sin(theta)
-        z = np.full_like(theta, self.position[2])
-        return np.column_stack((x, y, z))
-
-
-# 使用示例与测试
-if __name__ == "__main__":
-    # 创建Q=+1e-6C，R=0.5m的圆环，中心在原点
-    ring = RingCharge(q=1e-6, radius=0.5, position=[0, 0, 0])
-    
-    # 测试轴线点（解析解）
-    point_axis = np.array([0, 0, 0.3])  # z=0.3m
-    E_axis = ring.electric_field(point_axis)
-    V_axis = ring.potential(point_axis)
-    print(f"轴线点{point_axis}：")
-    print(f"  E={E_axis}, |E|={np.linalg.norm(E_axis):.6e} N/C")
-    print(f"  理论Ez={ring.k_times_Q * 0.3 / (0.5**2 + 0.3**2)**1.5:.6e} N/C")
-    print(f"  V={V_axis:.6e} V")
-    print(f"  理论V={ring.k_times_Q / np.sqrt(0.5**2 + 0.3**2):.6e} V")
-    
-    # 测试非轴线点（数值积分）
-    point_off = np.array([0.6, 0.2, 0.3])
-    E_off = ring.electric_field(point_off)
-    V_off = ring.potential(point_off)
-    print(f"\n非轴线点{point_off}：")
-    print(f"  E={E_off}, |E|={np.linalg.norm(E_off):.6e} N/C")
-    print(f"  V={V_off:.6e} V")
-    
-    # 验证轴线和非轴线一致性（靠近轴线）
-    point_near_axis = np.array([1e-6, 0, 0.3])  # 极接近轴线
-    E_near = ring.electric_field(point_near_axis)
-    print(f"\n近轴线一致性验证：")
-    print(f"  数值解 Ez={E_near[2]:.6e}")
-    print(f"  解析解 Ez={ring.k_times_Q * 0.3 / (0.5**2 + 0.3**2)**1.5:.6e}")
-    print(f"  相对误差={abs(E_near[2] - E_axis[2])/abs(E_axis[2]):.2e}")
-    
-    # 测试电场垂直分量（轴线点应为0）
-    print(f"\n轴线电场垂直分量：Ex={E_axis[0]:.2e}, Ey={E_axis[1]:.2e}（应≈0）")
-    
-    # 测试多个点
-    points = np.array([[0,0,0.3], [0.6,0.2,0.3], [1,0,0]])
-    E_array = ring.electric_field(points)
-    V_array = ring.potential(points)
-    print(f"\n多点电场：")
-    print(E_array)
-    print(f"\n多点电势：{V_array}")
-    
-    # 验证超距衰减
-    far_point = np.array([0, 0, 10])  # z=10m >> R
-    V_far = ring.potential(far_point)
-    V_dipole_approx = ring.k_times_Q / far_point[2]  # 近似为点电荷
-    print(f"\n超距衰减验证（z=10m >> R=0.5m）：")
-    print(f"  圆环电势={V_far:.6e} V")
-    print(f"  点电荷近似={V_dipole_approx:.6e} V")
-    print(f"  相对差异={abs(V_far - V_dipole_approx)/V_dipole_approx:.2e}")

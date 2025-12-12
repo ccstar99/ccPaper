@@ -102,34 +102,3 @@ class PointCharge:
         return r_mag < self.radius
 
 
-# 使用示例与测试
-if __name__ == "__main__":
-    # 创建+1C点电荷位于原点
-    charge = PointCharge(q=1.0, position=[0, 0, 0], radius=0.1)
-    
-    # 测试单个点
-    point = np.array([1, 0, 0])
-    E = charge.electric_field(point)
-    V = charge.potential(point)
-    print(f"点{point}处：E={E}, V={V:.2e}")
-    
-    # 测试点数组（批量计算）
-    points = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-    E_array = charge.electric_field(points)
-    V_array = charge.potential(points)
-    print(f"\n多点电场：\n{E_array}")
-    print(f"\n多点电势：{V_array}")
-    
-    # 验证距离反平方律
-    r_values = np.array([0.5, 1.0, 2.0, 5.0])
-    test_points = np.column_stack((r_values, np.zeros_like(r_values), np.zeros_like(r_values)))
-    E_magnitudes = np.linalg.norm(charge.electric_field(test_points), axis=1)
-    
-    print("\n距离反平方验证：")
-    for r, E in zip(r_values, E_magnitudes):
-        print(f"r={r:.1f}m, |E|={E:.2e} N/C")
-    
-    # 理论值：E ∝ 1/r²
-    ratio = E_magnitudes[0] / E_magnitudes[1]
-    expected_ratio = (r_values[1]/r_values[0])**2
-    print(f"\nr=0.5与r=1.0场强比：{ratio:.2f} (理论:{expected_ratio:.2f})")
