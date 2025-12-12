@@ -7,7 +7,6 @@ import streamlit as st
 import numpy as np
 import sys
 import os
-import logging
 import time
 from datetime import datetime
 import traceback
@@ -27,10 +26,6 @@ from physics.point import PointCharge
 from physics.line import LineCharge
 from physics.ring import RingCharge
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # 页面配置（必须在任何Streamlit代码之前）
 st.set_page_config(
     page_title="*RUNNING CC* ",
@@ -44,8 +39,6 @@ class ElectroFieldApp:
     
     def __init__(self):
         self._initialize_session_state()
-        # 暂时不初始化可视化器，在需要时根据电荷列表初始化
-        self.visualizer = None
         
     def _initialize_session_state(self):
         """初始化会话状态"""
