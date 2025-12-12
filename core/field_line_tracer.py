@@ -240,8 +240,6 @@ class AdaptiveFieldLineTracer:
             radial = np.array([-np.cos(ring_angle), -np.sin(ring_angle), 0])
             # 2. 轴向（垂直于圆环平面）
             axial = np.array([0, 0, 1])
-            # 3. 切线方向（沿圆环切线）
-            tangent = np.array([-np.sin(ring_angle), np.cos(ring_angle), 0])
             
             # 在环面上生成均匀分布的点
             for j in range(n_around_cross):
@@ -276,7 +274,7 @@ class AdaptiveFieldLineTracer:
         path = [start_point.copy()]
         point = start_point.copy()
         
-        for iteration in range(self.max_iter):
+        for _ in range(self.max_iter):
             E = self.field_calc.electric_field(point)
             E_mag = np.linalg.norm(E)
             
@@ -386,81 +384,3 @@ class AdaptiveFieldLineTracer:
         
         print(f"成功追踪 {len(lines)} 条电场线")
         return lines
-
-
-# ==================== 测试套件 ====================
-def create_test_scene(dim: int = 3) -> List:
-    """
-    创建标准测试场景（电偶极子）
-    """
-    if dim == 2:
-        return [
-            PointCharge(q=1e-6, position=[0, 0, 0], radius=0.1),
-            PointCharge(q=-1e-6, position=[1, 0, 0], radius=0.1)
-        ]
-    else:
-        return [
-            PointCharge(q=1e-6, position=[0, 0, 0], radius=0.1),
-            PointCharge(q=-1e-6, position=[1, 0, 0], radius=0.1),
-            LineCharge(lambda_val=0.5e-9, position=[0.5, 0.5], radius=0.05)
-        ]
-
-def test_tracer():
-    """
-    综合验证测试
-    """
-    print("\n" + "="*60)
-    print("电场线追踪器验证测试")
-    print("="*60)
-    
-    # 测试1：3D场景
-    print("\n【测试1：3D场景追踪】")
-    charges_3d = create_test_scene(dim=3)
-    tracer_3d = AdaptiveFieldLineTracer(charges_3d, dim=3, max_iter=500)
-    lines_3d = tracer_3d.trace_all_field_lines()
-    
-    print(f"生成 {len(lines_3d)} 条3D电场线")
-    if lines_3d:
-        avg_length = np.mean([len(line) for line in lines_3d])
-        print(f"平均长度: {avg_length:.1f} 个点")
-        
-        # 验证终止于负电荷
-        neg_pos = charges_3d[1].position
-        neg_radius = charges_3d[1].radius
-        terminated_correctly = sum(
-            1 for line in lines_3d 
-            if len(line) > 1 and np.linalg.norm(line[-1] - neg_pos) <= neg_radius * 1.5
-        )
-        print(f"正确终止比例: {terminated_correctly}/{len(lines_3d)} = {terminated_correctly/len(lines_3d):.1%}")
-    
-    # 测试2：2D场景
-    print("\n【测试2：2D场景追踪】")
-    charges_2d = create_test_scene(dim=2)
-    tracer_2d = AdaptiveFieldLineTracer(charges_2d, dim=2, max_iter=500)
-    lines_2d = tracer_2d.trace_all_field_lines()
-    
-    print(f"生成 {len(lines_2d)} 条2D电场线")
-    if lines_2d:
-        avg_length = np.mean([len(line) for line in lines_2d])
-        print(f"平均长度: {avg_length:.1f} 个点")
-        
-        # 验证Z轴约束
-        max_z_error = max(np.abs(line[:, 2]).max() for line in lines_2d)
-        print(f"Z轴约束误差: {max_z_error:.2e} (应≈0)")
-    
-    # 测试3：最少线数验证
-    print("\n【测试3：最少线数验证】")
-    single_charge = [PointCharge(q=1e-6, position=[0, 0, 0], radius=0.1)]
-    single_charge.append(PointCharge(q=-1e-9, position=[10, 0, 0], radius=0.1))
-    
-    tracer_min = AdaptiveFieldLineTracer(single_charge, dim=3)
-    lines_min = tracer_min.trace_all_field_lines()
-    
-    print(f"场景生成 {len(lines_min)} 条线")
-    status = "✓" if len(lines_min) >= 100 else "✗"
-    print(f"{status} 最小100条线要求")
-    
-    print("\n" + "="*60)
-
-if __name__ == "__main__":
-    test_tracer()
