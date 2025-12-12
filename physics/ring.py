@@ -239,3 +239,25 @@ class RingCharge:
         # 判断是否在管体内：距离小于半径的小比例（固定管体厚度）
         tube_thickness = self.R * tol
         return distance_to_ring < tube_thickness
+    
+    def get_ring_visualization_points(self, num_points: int = 200) -> np.ndarray:
+        """
+        获取圆环电荷的可视化点集
+        
+        Args:
+            num_points: 圆环上的点数量
+            
+        Returns:
+            圆环点集数组，形状为 (num_points, 3)
+        """
+        # 使用参数方程生成圆环点集
+        theta = np.linspace(0, 2 * np.pi, num_points)
+        
+        # 圆环位于xy平面内
+        x = self.position[0] + self.R * np.cos(theta)
+        y = self.position[1] + self.R * np.sin(theta)
+        z = np.full(num_points, self.position[2])  # 固定z坐标
+        
+        # 组合成三维点集
+        points = np.vstack((x, y, z)).T
+        return points

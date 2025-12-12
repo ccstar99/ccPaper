@@ -118,3 +118,25 @@ class LineCharge:
         r_xy = points[:, :2] - self.position
         r_mag = np.linalg.norm(r_xy, axis=1)
         return r_mag < self.radius
+    
+    def get_line_axis_points(self, length: float = 10.0, num_points: int = 200) -> np.ndarray:
+        """
+        获取线电荷的可视化线段点集
+        
+        由于无限长导线无法完全绘制，我们使用一条足够长的线段来表示它
+        
+        Args:
+            length: 线段长度
+            num_points: 线段上的点数量
+            
+        Returns:
+            线段点集数组，形状为 (num_points, 3)
+        """
+        # 线电荷沿z轴方向无限延伸，在xy平面上显示为垂直线段
+        x = np.full(num_points, self.position[0])
+        y = np.full(num_points, self.position[1])
+        z = np.linspace(-length/2, length/2, num_points)
+        
+        # 组合成三维点集
+        points = np.vstack((x, y, z)).T
+        return points
