@@ -80,8 +80,7 @@ def run_simulation():
 
     results = solver.validate_solution(sigma_elements, E_elements)
     print(f"  解析解: |E| = {analytical_E:.3f} V/m")
-    print(f"  最大相对误差: {results['max_E_error']:.3f}%")
-    print(f"  平均相对误差: {results['mean_E_error']:.3f}%")
+    print(f"  均值相对误差: {results['E_mean_error']:.3f}%")
     print(f"  总电荷相对误差: {results['charge_error']:.3f}%")
 
     # 步骤4：生成分析图表
@@ -151,17 +150,26 @@ def run_simulation():
     # 视角1：正面
     print("  渲染视角1：正面视图")
     viz.set_camera(position=[3, 2, 1], zoom=CAMERA_ZOOM)
-    viz.show(save_path=str(OUTPUT_DIR / "cosmic_sphere_front.png"))
+    try:
+        viz.show(save_path=str(OUTPUT_DIR / "cosmic_sphere_front.png"))
+    except AttributeError:
+        print("  警告：渲染正面视图失败，跳过该步骤")
 
     # 视角2：侧面
     print("  渲染视角2：俯视图")
     viz.set_camera(position=[0, 0, 4], zoom=CAMERA_ZOOM)
-    viz.show(save_path=str(OUTPUT_DIR / "cosmic_sphere_top.png"))
+    try:
+        viz.show(save_path=str(OUTPUT_DIR / "cosmic_sphere_top.png"))
+    except AttributeError:
+        print("  警告：渲染俯视图失败，跳过该步骤")
 
     # 视角3：等距视角
     print("  渲染视角3：等距视图")
     viz.set_camera(position=[3, 3, 3], zoom=CAMERA_ZOOM)
-    viz.show(save_path=str(OUTPUT_DIR / "cosmic_sphere_iso.png"))
+    try:
+        viz.show(save_path=str(OUTPUT_DIR / "cosmic_sphere_iso.png"))
+    except AttributeError:
+        print("  警告：渲染等距视图失败，跳过该步骤")
 
     # 步骤6：统一可视化接口（一键全部生成）- 暂时注释
     # print("\n【步骤6】一键生成所有可视化...")

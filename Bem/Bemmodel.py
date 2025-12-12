@@ -3,111 +3,123 @@ from typing import List, Tuple
 # ==================== 1. 数学函数库 ====================
 # 严格遵循球面三角学公式，所有角度单位为弧度
 
+def spherical_triangle_area(vertices: List[np.ndarray], center: np.ndarray, radius: float) -> float:
+    """
+    计算球面三角形面积（修正版）
+    使用球面三角学公式：S = R^2 * (A + B + C - π)
+    其中A,B,C为球面三角形的三个内角（单位：弧度）
+    
+    算法步骤：
+    1. 计算三边的球面长度（大圆弧长）
+    2. 使用球面三角学的余弦定理计算三个内角
+    """
+    # 1. 获取三个顶点
+    v0, v1, v2 = vertices
+    
+    # 2. 计算三条边的球面长度（大圆弧长）
+    a = great_circle_arc_length(v1, v2, center, radius)  # 边v1-v2对应的角在v0处
+    b = great_circle_arc_length(v2, v0, center, radius)  # 边v2-v0对应的角在v1处
+    c = great_circle_arc_length(v0, v1, center, radius)  # 边v0-v1对应的角在v2处
+    
+    # 3. 使用球面三角学的余弦定理计算三个内角
+    # 球面余弦定理：cos A = (cos a - cos b cos c) / (sin b sin c)
+    
+    # 转换为弧度角（边角对应关系）
+    cos_a = np.cos(a / radius)  # 注意：a/radius得到的是圆心角（弧度）
+    cos_b = np.cos(b / radius)
+    cos_c = np.cos(c / radius)
+    
+    sin_a = np.sin(a / radius)
+    sin_b = np.sin(b / radius)
+    sin_c = np.sin(c / radius)
+    
+    # 计算三个内角
+    cos_A = (cos_a - cos_b * cos_c) / (sin_b * sin_c + 1e-12)
+    cos_B = (cos_b - cos_c * cos_a) / (sin_c * sin_a + 1e-12)
+    cos_C = (cos_c - cos_a * cos_b) / (sin_a * sin_b + 1e-12)
+    
+    # 确保值在[-1, 1]范围内
+    cos_A = np.clip(cos_A, -1.0, 1.0)
+    cos_B = np.clip(cos_B, -1.0, 1.0)
+    cos_C = np.clip(cos_C, -1.0, 1.0)
+    
+    # 计算角度（弧度）
+    A = np.arccos(cos_A)
+    B = np.arccos(cos_B)
+    C = np.arccos(cos_C)
+    
+    # 4. 计算球面三角形面积
+    area = radius ** 2 * (A + B + C - np.pi)
+    
+    # 对于凸球面三角形，面积应为正数
+    return max(area, 0.0)
+
+
 def great_circle_arc_length(p1: np.ndarray, p2: np.ndarray, center: np.ndarray, radius: float) -> float:
     """
-    计算两点间大圆弧长（论文式6）
-    p1, p2: 球面上两点坐标
-    center: 球心O
-    radius: 球半径r
-    公式: s = r·cos⁻¹[(p1-O)·(p2-O)/r²]
+    计算两点间大圆弧长（正确实现）
+    返回球面距离（沿球面的弧长）
     """
     v1 = p1 - center
     v2 = p2 - center
-    cos_angle = np.clip(np.dot(v1, v2) / (radius ** 2), -1.0, 1.0)
-    return radius * np.arccos(cos_angle)
-
-
-def spherical_angle(a: np.ndarray, b: np.ndarray, c: np.ndarray, center: np.ndarray) -> float:
-    """
-    计算球面三角形在顶点b处的角度（即平面Oab与Obc的二面角）
-    用于球面面积计算
-    """
-    # 确保所有输入都是3D坐标点
-    a = np.asarray(a).reshape(-1)
-    b = np.asarray(b).reshape(-1)
-    c = np.asarray(c).reshape(-1)
-    center = np.asarray(center).reshape(-1)
-    
-    # 处理形状为(12,)的情况，这可能是4个3D坐标拼接在一起
-    if a.shape[0] == 12:
-        # 提取第一个3D坐标
-        a = a[:3]
-    if b.shape[0] == 12:
-        # 提取第二个3D坐标
-        b = b[3:6]
-    if c.shape[0] == 12:
-        # 提取第三个3D坐标
-        c = c[6:9]
-    if center.shape[0] == 12:
-        # 提取第四个3D坐标作为球心
-        center = center[9:12]
-    
-    # 检查维度
-    if a.shape[0] != 3 or b.shape[0] != 3 or c.shape[0] != 3 or center.shape[0] != 3:
-        raise ValueError(f"所有输入点必须是3D坐标。当前形状：a={a.shape}, b={b.shape}, c={c.shape}, center={center.shape}")
-    
-    # 向量归一化
-    ba = a - center
-    bc = c - center
-    
-    # 计算模长
-    ba_norm = np.linalg.norm(ba)
-    bc_norm = np.linalg.norm(bc)
     
     # 归一化
-    if ba_norm > 1e-10:
-        ba_norm_vec = ba / ba_norm
-    else:
-        ba_norm_vec = np.zeros_like(ba)
+    v1_norm = np.linalg.norm(v1)
+    v2_norm = np.linalg.norm(v2)
     
-    if bc_norm > 1e-10:
-        bc_norm_vec = bc / bc_norm
-    else:
-        bc_norm_vec = np.zeros_like(bc)
-
-    # 计算两平面法向量
-    # 平面Oba的法向（指向球面外）
-    cross1 = np.cross(ba_norm_vec, bc_norm_vec)
-    n1 = np.cross(ba_norm_vec, cross1)
+    if v1_norm < 1e-12 or v2_norm < 1e-12:
+        return 0.0
     
-    # 归一化n1
-    n1_norm = np.linalg.norm(n1)
-    if n1_norm > 1e-10:
-        n1 = n1 / n1_norm
-    else:
-        n1 = np.zeros_like(n1)
+    v1_unit = v1 / v1_norm
+    v2_unit = v2 / v2_norm
     
-    # 平面Obc的法向（指向球面外）
-    cross2 = np.cross(bc_norm_vec, ba_norm_vec)
-    n2 = np.cross(bc_norm_vec, cross2)
+    # 计算圆心角（夹角）
+    cos_angle = np.clip(np.dot(v1_unit, v2_unit), -1.0, 1.0)
+    angle = np.arccos(cos_angle)
     
-    # 归一化n2
-    n2_norm = np.linalg.norm(n2)
-    if n2_norm > 1e-10:
-        n2 = n2 / n2_norm
-    else:
-        n2 = np.zeros_like(n2)
-
-    # 计算二面角的余弦值
-    cos_angle = np.clip(np.dot(n1, n2), -1.0, 1.0)
-    
-    return np.arccos(cos_angle)
+    # 球面弧长 = 半径 × 圆心角
+    return radius * angle
 
 
-def spherical_triangle_area(vertices: List[np.ndarray], center: np.ndarray, radius: float) -> float:
+def spherical_angle(vertex: np.ndarray, p1: np.ndarray, p2: np.ndarray,
+                    center: np.ndarray, radius: float) -> float:
     """
-    计算球面三角形面积（球面角超公式，论文隐含使用）
-    公式: S = r²(A + B + C - π)
-    A,B,C为三个球面内角
+    计算球面三角形在顶点vertex处的内角
+    使用向量方法：两个切向量的夹角
     """
-    A = spherical_angle(vertices[2], vertices[0], vertices[1], center)  # 顶点0处的角
-    B = spherical_angle(vertices[0], vertices[1], vertices[2], center)  # 顶点1处的角
-    C = spherical_angle(vertices[1], vertices[2], vertices[0], center)  # 顶点2处的角
-
-    area = radius ** 2 * (A + B + C - np.pi)
-
-    # 数值稳定性处理：极小三角形面积可能为负
-    return max(area, 1e-12)
+    # 计算从球心到各点的向量
+    v = vertex - center
+    v1 = p1 - center
+    v2 = p2 - center
+    
+    # 归一化
+    v_norm = np.linalg.norm(v)
+    v1_norm = np.linalg.norm(v1)
+    v2_norm = np.linalg.norm(v2)
+    
+    if v_norm < 1e-12 or v1_norm < 1e-12 or v2_norm < 1e-12:
+        return 0.0
+    
+    v_unit = v / v_norm
+    v1_unit = v1 / v1_norm
+    v2_unit = v2 / v2_norm
+    
+    # 计算切向量（垂直于径向向量）
+    # 从顶点指向p1的切向量
+    t1 = v1_unit - np.dot(v1_unit, v_unit) * v_unit
+    t1_norm = np.linalg.norm(t1)
+    if t1_norm > 1e-12:
+        t1 = t1 / t1_norm
+    
+    # 从顶点指向p2的切向量
+    t2 = v2_unit - np.dot(v2_unit, v_unit) * v_unit
+    t2_norm = np.linalg.norm(t2)
+    if t2_norm > 1e-12:
+        t2 = t2 / t2_norm
+    
+    # 计算两个切向量的夹角（即球面内角）
+    dot_product = np.clip(np.dot(t1, t2), -1.0, 1.0)
+    return np.arccos(dot_product)
 
 
 def project_to_sphere(points: np.ndarray, center: np.ndarray, radius: float) -> np.ndarray:
@@ -182,11 +194,14 @@ class SphericalTriangle:
         return lengths
 
     def _compute_spherical_angles(self) -> np.ndarray:
-        """计算三个球面内角（弧度）"""
+        """计算三个球面内角（修正版）"""
         angles = np.array([
-            spherical_angle(self.vertices[2], self.vertices[0], self.vertices[1], self.center),
-            spherical_angle(self.vertices[0], self.vertices[1], self.vertices[2], self.center),
-            spherical_angle(self.vertices[1], self.vertices[2], self.vertices[0], self.center)
+            spherical_angle(self.vertices[0], self.vertices[1], self.vertices[2],
+                           self.center, self.radius),
+            spherical_angle(self.vertices[1], self.vertices[2], self.vertices[0],
+                           self.center, self.radius),
+            spherical_angle(self.vertices[2], self.vertices[0], self.vertices[1],
+                           self.center, self.radius)
         ])
         return angles
 
