@@ -169,27 +169,65 @@ class AdaptiveFieldLineTracer:
                 
                 for i in range(points_per_circle):
                     angle = 2 * np.pi * i / points_per_circle
-                    # 2D模式下只在xy平面生成
-                    offset = radius * np.array([np.cos(angle), np.sin(angle), 0])
+                    # 2D模式下根据线电荷方向生成不同平面的点
+                    if charge.direction == 'x':
+                        # 沿x轴方向：在y-z平面生成
+                        offset = radius * np.array([0, np.cos(angle), np.sin(angle)])
+                    elif charge.direction == 'y':
+                        # 沿y轴方向：在x-z平面生成
+                        offset = radius * np.array([np.cos(angle), 0, np.sin(angle)])
+                    else:  # 'z'轴方向
+                        # 沿z轴方向：在x-y平面生成
+                        offset = radius * np.array([np.cos(angle), np.sin(angle), 0])
+                    
                     point = charge_pos.copy()
                     point += offset
-                    point[2] = 0  # 2D模式下强制z=0
+                    if self.dim == 2:
+                        if charge.direction == 'x':
+                            point[0] = charge_pos[0]  # 2D模式下强制x=constant
+                        elif charge.direction == 'y':
+                            point[1] = charge_pos[1]  # 2D模式下强制y=constant
+                        else:
+                            point[2] = charge_pos[2]  # 2D模式下强制z=0
                     points.append(point)
         else:
-            # 3D模式：沿轴线分布多个圆
-            num_circles = max(1, num_points // 10)
+            # 3D模式：在线电荷圆柱表面生成均匀分布的起始点
+            # 使用圆柱坐标系生成均匀分布的点，避免规则排列
+            line_length = 10.0  # 可视化线段长度
             
-            for circle_idx in range(num_circles):
-                z_offset = (circle_idx - num_circles/2) * charge.radius * 2
+            for i in range(num_points):
+                # 随机生成线电荷线段上的位置
+                if charge.direction == 'x':
+                    # 沿x轴方向：在x轴上随机分布
+                    t = np.random.uniform(-line_length/2, line_length/2)
+                    # 圆柱面上的角度
+                    theta = np.random.uniform(0, 2*np.pi)
+                    # 圆柱半径
+                    radius = charge.radius * 1.5
+                    # 计算偏移量
+                    offset = np.array([t, radius*np.cos(theta), radius*np.sin(theta)])
+                elif charge.direction == 'y':
+                    # 沿y轴方向：在y轴上随机分布
+                    t = np.random.uniform(-line_length/2, line_length/2)
+                    # 圆柱面上的角度
+                    theta = np.random.uniform(0, 2*np.pi)
+                    # 圆柱半径
+                    radius = charge.radius * 1.5
+                    # 计算偏移量
+                    offset = np.array([radius*np.cos(theta), t, radius*np.sin(theta)])
+                else:  # 'z'轴方向
+                    # 沿z轴方向：在z轴上随机分布
+                    t = np.random.uniform(-line_length/2, line_length/2)
+                    # 圆柱面上的角度
+                    theta = np.random.uniform(0, 2*np.pi)
+                    # 圆柱半径
+                    radius = charge.radius * 1.5
+                    # 计算偏移量
+                    offset = np.array([radius*np.cos(theta), radius*np.sin(theta), t])
                 
-                n_per_circle = num_points // num_circles
-                for i in range(n_per_circle):
-                    angle = 2 * np.pi * i / n_per_circle
-                    offset = charge.radius * np.array([np.cos(angle), np.sin(angle), 0])
-                    point = charge_pos.copy()
-                    point[2] = z_offset  # 使用z_offset替换原z坐标
-                    point += offset
-                    points.append(point)
+                # 生成起始点
+                point = charge_pos.copy() + offset
+                points.append(point)
         
         # 确保生成足够数量的点
         while len(points) < num_points:
@@ -198,7 +236,12 @@ class AdaptiveFieldLineTracer:
             perturbation = np.random.normal(0, charge.radius * 0.1, 3)
             new_point = base_point + perturbation
             if self.dim == 2:
-                new_point[2] = 0  # 2D模式下保持z=0
+                if charge.direction == 'x':
+                    new_point[0] = charge_pos[0]  # 2D模式下强制x=constant
+                elif charge.direction == 'y':
+                    new_point[1] = charge_pos[1]  # 2D模式下强制y=constant
+                else:
+                    new_point[2] = charge_pos[2]  # 2D模式下强制z=constant
             points.append(new_point)
                 
         return points
