@@ -1,6 +1,6 @@
 # ui/app.py
 """
-*RUNNING CC* 静电场可视化平台
+RUNNING CC 静电场可视化平台
 保留所有祝福语、动态主题和UI设计，集成新的核心算法
 """
 import streamlit as st
@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 import traceback
 from typing import List, Dict, Any
+import re
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,8 +20,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.field_calculator import FieldCalculator
 from core.potential_calculator import PotentialCalculator
 from core.field_line_tracer import AdaptiveFieldLineTracer
-import sys
-import os
 
 from physics.point import PointCharge
 from physics.line import LineCharge
@@ -28,7 +27,7 @@ from physics.ring import RingCharge
 
 # 页面配置（必须在任何Streamlit代码之前）
 st.set_page_config(
-    page_title="*RUNNING CC* ",
+    page_title="RUNNING CC",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -39,6 +38,7 @@ class ElectroFieldApp:
     
     def __init__(self):
         self._initialize_session_state()
+        self.formula_converter = FormulaConverter()
         
     def _initialize_session_state(self):
         """初始化会话状态"""
@@ -166,7 +166,21 @@ class ElectroFieldApp:
                 index=0
             )
             
+            # 显示当前模型的物理公式
+            st.markdown("---")
+            st.subheader("物理公式")
+            formulas = self.formula_converter.get_human_formulas(model_type)
+            
+            for formula_type, formula_text in formulas.items():
+                with st.expander(f"{formula_type}公式", expanded=True):
+                    st.markdown(f"""
+                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #8B5CF6;">
+                        {formula_text}
+                    </div>
+                    """, unsafe_allow_html=True)
+            
             # 参数配置
+            st.markdown("---")
             st.subheader("模型参数")
             params = self._render_parameter_panel(model_type)
             
@@ -241,7 +255,7 @@ class ElectroFieldApp:
         
         # 网格分辨率
         params['grid_size'] = st.slider("网格分辨率", 40, 150, 80, step=10)
-        params['boundary'] = st.slider("计算边界", 2.0, 10.0, 5.0)
+        params['boundary'] = st.slider("计算边界", 2.0, 10.0, 2.0)
         
         return params
     
@@ -308,7 +322,7 @@ class ElectroFieldApp:
         """, unsafe_allow_html=True)
         
         if not params['calculate_requested']:
-            st.info("请在左侧配置参数，点击“开始计算”")
+            st.info("请在左侧配置参数，点击\"开始计算\"")
             return
         
         # 执行计算
@@ -330,7 +344,12 @@ class ElectroFieldApp:
                 V = potential_calc.potential(observation_points)
                 
                 # 4. 追踪电场线
-                tracer = AdaptiveFieldLineTracer(charges, dim=3, max_iter=15000)
+                tracer = AdaptiveFieldLineTracer(
+                    charges, 
+                    dim=3, 
+                    max_iter=15000, 
+                    n_field_lines=params['viz_config']['n_field_lines']
+                )
                 field_lines = tracer.trace_all_field_lines()
                 
                 # 5. 渲染结果
@@ -362,7 +381,7 @@ class ElectroFieldApp:
         elif model_type == 'line_charge':
             pos = params['position']
             charges.append(LineCharge(lambda_val=params['lambda_val'], 
-                                    position=pos, radius=0.05))
+                                    position=pos, radius=0.05, direction='x'))
             
         elif model_type == 'ring_charge':
             pos = params['position']
@@ -394,6 +413,8 @@ class ElectroFieldApp:
         tab1, tab2, tab3, tab4 = st.tabs([
             "电场线2D", "电场线3D", "电荷分布", "电势3D"
         ])
+        
+        model_type = params['model_type']
         
         with tab1:
             st.subheader("电场线2D")
@@ -494,6 +515,9 @@ class ElectroFieldApp:
             ax.set_ylabel('Y (m)')
             ax.set_title('2D 电场线分布')
             st.pyplot(fig, width='stretch')
+            
+            # 显示人类可读的公式
+            self._render_human_formula(model_type, "电场强度")
         
         with tab2:
             st.subheader("电场线3D ")
@@ -577,6 +601,9 @@ class ElectroFieldApp:
                 title='3D 电场线分布'
             )
             st.plotly_chart(fig, width='stretch')
+            
+            # 显示人类可读的公式
+            self._render_human_formula(model_type, "场强矢量积分")
         
         with tab3:
             st.subheader("电荷分布")
@@ -645,6 +672,9 @@ class ElectroFieldApp:
                 title='电荷分布'
             )
             st.plotly_chart(fig, use_container_width=True)
+            
+            # 显示人类可读的公式
+            self._render_human_formula(model_type, "电荷密度")
         
         with tab4:
             st.subheader("电势3D")
@@ -674,11 +704,209 @@ class ElectroFieldApp:
                 title='2D 电势分布 (3D 表面图)'
             )
             st.plotly_chart(fig, use_container_width=True)
+            
+            # 显示人类可读的公式
+            self._render_human_formula(model_type, "电势")
+    
+    def _render_human_formula(self, model_type: str, formula_type: str):
+        """渲染人类可读的公式"""
+        formula_text = self.formula_converter.get_formula_for_display(model_type, formula_type)
+        
+        if formula_text:
+            st.markdown("---")
+            st.markdown(f"**{formula_type}公式**")
+            st.markdown(f"""
+            <div style="background-color: #f0f7ff; padding: 20px; border-radius: 10px; 
+                        border-left: 5px solid #8B5CF6; margin: 15px 0;">
+                {formula_text}
+            </div>
+            """, unsafe_allow_html=True)
     
     def run(self):
         """运行应用"""
         params = self.render_sidebar()
         self.render_main_content(params)
+
+
+class FormulaConverter:
+    """公式转换器，将LaTeX转换为人类可读的数学物理公式"""
+    
+    def __init__(self):
+        self.formulas = {
+            'point_charge': {
+                '电场强度': {
+                    'description': '点电荷产生的电场强度公式',
+                    'formula': 'E(r) = (1/(4πϵ₀)) * (q/r²) * r̂',
+                    'explanation': '其中：<br>'
+                                 '• E(r) - 在距离r处的电场强度矢量<br>'
+                                 '• q - 点电荷的电量<br>'
+                                 '• r - 观测点到电荷的距离<br>'
+                                 '• r̂ - 从电荷指向观测点的单位矢量<br>'
+                                 '• ϵ₀ - 真空介电常数 (≈ 8.854×10⁻¹² F/m)<br>'
+                                 '• 1/(4πϵ₀) ≈ 9×10⁹ N·m²/C²'
+                },
+                '电势': {
+                    'description': '点电荷产生的电势公式',
+                    'formula': 'V(r) = (1/(4πϵ₀)) * (q/r)',
+                    'explanation': '其中：<br>'
+                                 '• V(r) - 在距离r处的电势<br>'
+                                 '• q - 点电荷的电量<br>'
+                                 '• r - 观测点到电荷的距离<br>'
+                                 '• 电势是标量，正电荷产生正电势'
+                },
+                '场强矢量积分': {
+                    'description': '点电荷电场强度的矢量形式',
+                    'formula': 'E(r) = (1/(4πϵ₀)) * q * (r - r₀)/|r - r₀|³',
+                    'explanation': '其中：<br>'
+                                 '• r - 观测点位置矢量<br>'
+                                 '• r₀ - 点电荷位置矢量<br>'
+                                 '• |r - r₀| - 观测点到电荷的距离'
+                },
+                '电荷密度': {
+                    'description': '点电荷的定义',
+                    'formula': 'q = 点电荷的总电量',
+                    'explanation': '点电荷是理想化模型，假设电荷集中在无限小的点上'
+                }
+            },
+            'line_charge': {
+                '电场强度': {
+                    'description': '无限长均匀线电荷产生的电场强度',
+                    'formula': 'E(r) = (λ/(2πϵ₀r)) * r̂',
+                    'explanation': '其中：<br>'
+                                 '• λ - 线电荷密度 (C/m)<br>'
+                                 '• r - 观测点到线电荷的垂直距离<br>'
+                                 '• r̂ - 垂直于线电荷的单位矢量<br>'
+                                 '• 电场方向垂直于线电荷向外'
+                },
+                '电势': {
+                    'description': '线电荷产生的电势（对数形式）',
+                    'formula': 'V(r) = -(λ/(2πϵ₀)) * ln(r/r₀)',
+                    'explanation': '其中：<br>'
+                                 '• r₀ - 参考距离<br>'
+                                 '• 电势随距离对数变化<br>'
+                                 '• 参考点通常取为单位距离'
+                },
+                '场强矢量积分': {
+                    'description': '线电荷电场强度的积分表达式',
+                    'formula': 'E(r) = (1/(4πϵ₀)) ∫[λ(r′) * (r - r′)/|r - r′|³] dl′',
+                    'explanation': '其中：<br>'
+                                 '• 积分沿整个线电荷进行<br>'
+                                 '• λ(r′) - 线电荷密度函数<br>'
+                                 '• dl′ - 线电荷的微小长度元素<br>'
+                                 '• 对于无限长均匀线电荷，积分可解析求解'
+                },
+                '电荷密度': {
+                    'description': '线电荷密度的定义',
+                    'formula': 'λ = dq/dl',
+                    'explanation': '其中：<br>'
+                                 '• λ - 线电荷密度<br>'
+                                 '• dq - 微小长度元素dl上的电荷量<br>'
+                                 '• 单位：库仑/米 (C/m)'
+                }
+            },
+            'ring_charge': {
+                '电场强度': {
+                    'description': '均匀带电圆环在轴线上产生的电场',
+                    'formula': 'E_z = (1/(4πϵ₀)) * (qz/(R² + z²)^{3/2})',
+                    'explanation': '其中：<br>'
+                                 '• R - 圆环半径<br>'
+                                 '• z - 观测点到圆环中心的轴向距离<br>'
+                                 '• 电场方向沿圆环轴线<br>'
+                                 '• 在圆环中心处(z=0)，电场为零'
+                },
+                '电势': {
+                    'description': '带电圆环产生的电势',
+                    'formula': 'V(r) = (1/(4πϵ₀)) ∮[λR dθ/|r - r′|]',
+                    'explanation': '其中：<br>'
+                                 '• 积分沿圆环周长进行<br>'
+                                 '• dθ - 角度微分元素<br>'
+                                 '• λ = q/(2πR) - 线电荷密度<br>'
+                                 '• 在轴线上有解析解'
+                },
+                '场强矢量积分': {
+                    'description': '圆环电荷电场强度的积分表达式',
+                    'formula': 'E(r) = (1/(4πϵ₀)) ∮[λR dθ * (r - r′)/|r - r′|³]',
+                    'explanation': '其中：<br>'
+                                 '• 积分沿圆环周长为0到2π<br>'
+                                 '• r′ - 圆环上电荷元素的位置<br>'
+                                 '• dθ - 角度微分<br>'
+                                 '• 一般需要数值积分求解'
+                },
+                '电荷密度': {
+                    'description': '圆环电荷的线密度',
+                    'formula': 'λ = q/(2πR)',
+                    'explanation': '其中：<br>'
+                                 '• q - 圆环总电荷量<br>'
+                                 '• R - 圆环半径<br>'
+                                 '• 2πR - 圆环周长<br>'
+                                 '• 假设电荷均匀分布在圆环上'
+                }
+            },
+            'dipole': {
+                '电场强度': {
+                    'description': '电偶极子产生的电场强度',
+                    'formula': 'E(r) = (1/(4πϵ₀)) * [3(p·r̂)r̂ - p]/r³',
+                    'explanation': '其中：<br>'
+                                 '• p = qd - 电偶极矩<br>'
+                                 '• d - 正负电荷之间的距离矢量<br>'
+                                 '• r̂ - 从偶极子中心指向观测点的单位矢量<br>'
+                                 '• 电场在偶极子轴线上最强'
+                },
+                '电势': {
+                    'description': '电偶极子产生的电势',
+                    'formula': 'V(r) = (1/(4πϵ₀)) * (p·r̂)/r²',
+                    'explanation': '其中：<br>'
+                                 '• 电势与距离的平方成反比<br>'
+                                 '• 在垂直于偶极矩的方向上电势为零<br>'
+                                 '• 电势分布具有偶对称性'
+                },
+                '场强矢量积分': {
+                    'description': '电偶极子电场强度的叠加原理',
+                    'formula': 'E(r) = (1/(4πϵ₀)) Σ[q_i * (r - r_i)/|r - r_i|³]',
+                    'explanation': '其中：<br>'
+                                 '• 对两个点电荷的电场进行矢量叠加<br>'
+                                 '• q₁ = +q, q₂ = -q<br>'
+                                 '• 当距离远大于偶极子尺寸时，可近似为偶极子场'
+                },
+                '电荷密度': {
+                    'description': '电偶极矩的定义',
+                    'formula': 'p = q * d',
+                    'explanation': '其中：<br>'
+                                 '• p - 电偶极矩矢量<br>'
+                                 '• q - 一个电荷的大小<br>'
+                                 '• d - 从负电荷指向正电荷的位移矢量<br>'
+                                 '• 单位：库仑·米 (C·m)'
+                }
+            }
+        }
+    
+    def get_formula_for_display(self, model_type: str, formula_type: str) -> str:
+        """获取显示用的人类可读公式"""
+        if model_type in self.formulas and formula_type in self.formulas[model_type]:
+            formula_info = self.formulas[model_type][formula_type]
+            return f"""
+            <div style="font-family: 'Times New Roman', Times, serif;">
+                <h4 style="color: #4B5563; margin-bottom: 10px;">{formula_info['description']}</h4>
+                <div style="font-size: 1.5rem; font-weight: bold; color: #1F2937; 
+                           background: linear-gradient(90deg, #F3F4F6, #E5E7EB); 
+                           padding: 15px; border-radius: 8px; text-align: center; margin: 15px 0;">
+                    {formula_info['formula']}
+                </div>
+                <div style="color: #6B7280; font-size: 0.95rem; line-height: 1.6;">
+                    {formula_info['explanation']}
+                </div>
+            </div>
+            """
+        return ""
+    
+    def get_human_formulas(self, model_type: str) -> Dict[str, str]:
+        """获取所有人类可读公式的简短版本用于侧边栏"""
+        if model_type in self.formulas:
+            short_formulas = {}
+            for key, info in self.formulas[model_type].items():
+                short_formulas[key] = f"{info['formula']}"
+            return short_formulas
+        return {}
 
 
 if __name__ == "__main__":
