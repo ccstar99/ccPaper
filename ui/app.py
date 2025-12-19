@@ -11,7 +11,6 @@ import time
 from datetime import datetime
 import traceback
 from typing import List, Dict, Any
-import re
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -406,8 +405,13 @@ class ElectroFieldApp:
                        field_lines: List[np.ndarray], params: Dict[str, Any]):
         """渲染结果"""
         import matplotlib.pyplot as plt
-        import plotly.graph_objects as go
         import numpy as np
+        
+        # 设置Matplotlib支持中文
+        plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+        
+        import plotly.graph_objects as go
         
         # 标签页
         tab1, tab2, tab3, tab4 = st.tabs([
@@ -562,7 +566,7 @@ class ElectroFieldApp:
                         y=line_points[:, 1],
                         z=line_points[:, 2],
                         mode='lines',
-                        line=dict(width=4, color=color),
+                        line=dict[str, int | str](width=4, color=color),
                         opacity=0.8,
                         name=f'线电荷 ({charge.lambda_val:.2e} C/m)'
                     ))
@@ -590,10 +594,10 @@ class ElectroFieldApp:
             
             boundary = params['boundary']
             fig.update_layout(
-                scene=dict(
-                    xaxis=dict(range=[-boundary, boundary]),
-                    yaxis=dict(range=[-boundary, boundary]),
-                    zaxis=dict(range=[-boundary, boundary]),
+                scene=dict[str, dict[str, list[Any]] | str](
+                    xaxis=dict[str, list[Any]](range=[-boundary, boundary]),
+                    yaxis=dict[str, list[Any]](range=[-boundary, boundary]),
+                    zaxis=dict[str, list[Any]](range=[-boundary, boundary]),
                     xaxis_title='X (m)',
                     yaxis_title='Y (m)',
                     zaxis_title='Z (m)'
@@ -633,7 +637,7 @@ class ElectroFieldApp:
                         y=line_points[:, 1],
                         z=line_points[:, 2],
                         mode='lines',
-                        line=dict(width=6, color=color),
+                        line=dict[str, int | str](width=6, color=color),
                         opacity=1,
                         name=f'线电荷 ({charge.lambda_val:.2e} C/m)'
                     ))
@@ -645,7 +649,7 @@ class ElectroFieldApp:
                         y=ring_points[:, 1],
                         z=ring_points[:, 2],
                         mode='lines',
-                        line=dict(width=6, color=color),
+                        line=dict[str, int | str](width=6, color=color),
                         opacity=1,
                         name=f'圆环电荷 ({charge.q:.2e} C)'
                     ))
@@ -656,22 +660,22 @@ class ElectroFieldApp:
                         y=[pos[1]],
                         z=[z_val],
                         mode='markers',
-                        marker=dict(size=12, color=color, opacity=1)
+                        marker=dict[str, int | str](size=12, color=color, opacity=1)
                     ))
             
             boundary = params['boundary']
             fig.update_layout(
-                scene=dict(
-                    xaxis=dict(range=[-boundary, boundary]),
-                    yaxis=dict(range=[-boundary, boundary]),
-                    zaxis=dict(range=[-boundary, boundary]),
+                scene=dict[str, dict[str, list[Any]] | str](
+                    xaxis=dict[str, list[Any]](range=[-boundary, boundary]),
+                    yaxis=dict[str, list[Any]](range=[-boundary, boundary]),
+                    zaxis=dict[str, list[Any]](range=[-boundary, boundary]),
                     xaxis_title='X (m)',
                     yaxis_title='Y (m)',
                     zaxis_title='Z (m)'
                 ),
                 title='电荷分布'
             )
-            st.plotly_chart(fig, width='container')
+            st.plotly_chart(fig, width='stretch')
             
             # 显示人类可读的公式
             self._render_human_formula(model_type, "电荷密度")
@@ -703,7 +707,7 @@ class ElectroFieldApp:
                 ),
                 title='2D 电势分布 (3D 表面图)'
             )
-            st.plotly_chart(fig, width='container')
+            st.plotly_chart(fig, use_container_width=True)
             
             # 显示人类可读的公式
             self._render_human_formula(model_type, "电势")
