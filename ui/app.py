@@ -671,7 +671,7 @@ class ElectroFieldApp:
                 ),
                 title='电荷分布'
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='container')
             
             # 显示人类可读的公式
             self._render_human_formula(model_type, "电荷密度")
@@ -703,7 +703,7 @@ class ElectroFieldApp:
                 ),
                 title='2D 电势分布 (3D 表面图)'
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='container')
             
             # 显示人类可读的公式
             self._render_human_formula(model_type, "电势")
