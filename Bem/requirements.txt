@@ -1,0 +1,15 @@
+# 球形电极三维静电场可视化系统 - 依赖列表
+# 核心数值计算库
+numpy>=1.24.0
+scipy>=1.10.0
+
+# 可视化库
+pyvista>=0.40.0
+plotly>=5.15.0
+matplotlib>=3.7.0
+
+# 数据库库
+mysql-connector-python>=8.0.33
+
+# 其他
+scikit-image>=0.21.0

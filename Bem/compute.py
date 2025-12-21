@@ -839,11 +839,11 @@ class SphericalBEMSolver:
         print(f"我们精度: 均值相对误差 {E_mean_error:.3f}%")
         
         if E_mean_error < 1.0:
-            print("✓ 实现成功，精度达到论文水平")
+            print("实现成功，精度达到论文水平")
         elif E_mean_error < 2.0:
-            print("✓ 实现基本正确，精度接近论文水平")
+            print("实现基本正确，精度接近论文水平")
         else:
-            print("⚠ 实现存在一定误差，需要进一步优化")
+            print("实现存在一定误差，需要进一步优化")
         
         results = {
             'sigma_mean': sigma_mean,
